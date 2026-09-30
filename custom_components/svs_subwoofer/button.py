@@ -7,8 +7,9 @@ import logging
 from homeassistant.components.button import ButtonEntity
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.update_coordinator import CoordinatorEntity, UpdateFailed
 
 from . import SVSConfigEntry
 from .coordinator import SVSSubwooferCoordinator
@@ -26,6 +27,7 @@ async def async_setup_entry(
 
     entities = [
         SVSReconnectButton(coordinator),
+        SVSDisconnectButton(coordinator),
         SVSSavePresetButton(coordinator, 1),
         SVSSavePresetButton(coordinator, 2),
         SVSSavePresetButton(coordinator, 3),
@@ -50,13 +52,30 @@ class SVSReconnectButton(CoordinatorEntity[SVSSubwooferCoordinator], ButtonEntit
     async def async_press(self) -> None:
         """Handle button press - reconnect to subwoofer."""
         _LOGGER.debug("Reconnect button pressed for %s", self.coordinator.address)
+        try:
+            await self.coordinator.async_reconnect()
+        except UpdateFailed as err:
+            raise HomeAssistantError(str(err)) from err
 
-        # Disconnect first if connected
-        if self.coordinator.is_connected:
-            await self.coordinator.async_disconnect()
 
-        # Request a refresh which will trigger reconnection
-        await self.coordinator.async_request_refresh()
+class SVSDisconnectButton(CoordinatorEntity[SVSSubwooferCoordinator], ButtonEntity):
+    """Button to disconnect from the subwoofer (e.g. to use the SVS app)."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "disconnect"
+    _attr_icon = "mdi:bluetooth-off"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: SVSSubwooferCoordinator) -> None:
+        """Initialize the button."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.address}_disconnect"
+        self._attr_device_info = coordinator.device_info
+
+    async def async_press(self) -> None:
+        """Handle button press - disconnect until the next command."""
+        _LOGGER.debug("Disconnect button pressed for %s", self.coordinator.address)
+        await self.coordinator.async_disconnect(manual=True)
 
 
 class SVSSavePresetButton(CoordinatorEntity[SVSSubwooferCoordinator], ButtonEntity):

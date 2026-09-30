@@ -10,11 +10,17 @@ from homeassistant.components.bluetooth import (
     BluetoothServiceInfoBleak,
     async_discovered_service_info,
 )
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
 from homeassistant.const import CONF_ADDRESS, CONF_NAME
+from homeassistant.core import callback
 from homeassistant.helpers.device_registry import format_mac
 
-from .const import DOMAIN, SVS_SERVICE_UUID
+from .const import CONF_KEEP_ALIVE, DEFAULT_KEEP_ALIVE, DOMAIN, SVS_SERVICE_UUID
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -31,6 +37,12 @@ class SVSSubwooferConfigFlow(ConfigFlow, domain=DOMAIN):
         """Initialize config flow."""
         self._discovery_info: BluetoothServiceInfoBleak | None = None
         self._discovered_devices: dict[str, BluetoothServiceInfoBleak] = {}
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
+        """Return the options flow."""
+        return SVSSubwooferOptionsFlow(config_entry)
 
     async def async_step_bluetooth(
         self, discovery_info: BluetoothServiceInfoBleak
@@ -239,4 +251,34 @@ class SVSSubwooferConfigFlow(ConfigFlow, domain=DOMAIN):
             ),
             errors=errors,
             description_placeholders={"mac_format": "AA:BB:CC:DD:EE:FF"},
+        )
+
+
+class SVSSubwooferOptionsFlow(OptionsFlow):
+    """Handle options for SVS Subwoofer."""
+
+    def __init__(self, config_entry: ConfigEntry) -> None:
+        """Initialize options flow."""
+        # Not self.config_entry: assigning that is deprecated on newer HA
+        self._entry = config_entry
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Manage the connection options."""
+        if user_input is not None:
+            return self.async_create_entry(data=user_input)
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_KEEP_ALIVE,
+                        default=self._entry.options.get(
+                            CONF_KEEP_ALIVE, DEFAULT_KEEP_ALIVE
+                        ),
+                    ): bool,
+                }
+            ),
         )

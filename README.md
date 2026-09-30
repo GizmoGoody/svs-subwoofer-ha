@@ -56,6 +56,12 @@ Control your SVS subwoofer directly from Home Assistant via Bluetooth. Full para
    - Devices marked with `[SVS]` are detected SVS subwoofers
    - Or choose "Enter MAC address manually" if your device isn't showing
 
+### Connection Options
+
+By default the integration connects when needed, re-reads all settings from the subwoofer on every connect, and disconnects after 60 seconds without commands so the SVS app can connect.
+
+If commands stop working after the subwoofer has been idle, open the integration's **Configure** dialog and enable **Stay connected**. The integration then keeps the connection open, checks it every 30 seconds, and reconnects if the subwoofer stops responding. Press the **Disconnect** button when you want to use the SVS app; the integration stays disconnected until the next command or Reconnect.
+
 ### Finding Your Subwoofer
 
 The integration shows all discovered Bluetooth devices by name. Your subwoofers will appear with the names you configured in the SVS app.
@@ -112,7 +118,9 @@ bluetoothctl
 
 | Entity | Description |
 |--------|-------------|
-| Reconnect | Reconnect to the subwoofer |
+| Reconnect | Reconnect to the subwoofer and re-read all settings |
+| Disconnect | Disconnect so the SVS app can connect (reconnects on the next command) |
+| Save to Preset 1-3 | Save current settings to a preset slot |
 
 ### Binary Sensors
 
@@ -506,6 +514,7 @@ Works with any SVS subwoofer that supports the official SVS app:
 - Check the Home Assistant logs for errors
 - Try using the Reconnect button
 - Ensure you're not connected via the SVS app
+- If commands stop working after the sub has been idle, enable **Stay connected** (see [Connection Options](#connection-options))
 
 ## Credits
 

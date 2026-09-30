@@ -49,6 +49,10 @@ STANDBY_MODE_MAP: Final = {"Auto ON": 0, "Trigger": 1, "ON": 2}
 PRESETS: Final = ["Preset 1", "Preset 2", "Preset 3", "Default"]
 PRESET_MAP: Final = {"Preset 1": 1, "Preset 2": 2, "Preset 3": 3, "Default": 4}
 
+# Options
+CONF_KEEP_ALIVE: Final = "keep_alive"
+DEFAULT_KEEP_ALIVE: Final = False
+
 # Command rate limiting (seconds)
 COMMAND_DELAY: Final = 0.2
 

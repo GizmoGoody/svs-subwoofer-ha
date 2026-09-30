@@ -34,6 +34,17 @@
       "no_device": "No device information available"
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Connection Options",
+        "description": "By default the integration disconnects after 60 seconds without commands so the SVS app can connect. Enable \"Stay connected\" if commands stop working after the subwoofer has been idle; the integration will then keep the connection open and check it every 30 seconds. Use the Disconnect button when you need the SVS app.",
+        "data": {
+          "keep_alive": "Stay connected"
+        }
+      }
+    }
+  },
   "entity": {
     "binary_sensor": {
       "connected": {
@@ -43,6 +54,9 @@
     "button": {
       "reconnect": {
         "name": "Reconnect"
+      },
+      "disconnect": {
+        "name": "Disconnect"
       },
       "save_preset_1": {
         "name": "Save to Preset 1"

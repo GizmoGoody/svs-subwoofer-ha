@@ -8,7 +8,9 @@ from typing import Any
 import voluptuous as vol
 from homeassistant.const import CONF_DEVICE_ID, CONF_DOMAIN, CONF_TYPE
 from homeassistant.core import Context, HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv, device_registry as dr
+from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from .const import (
     ACTION_TYPE_LOAD_PRESET,
@@ -100,9 +102,10 @@ async def async_call_action_from_config(
         await coordinator.async_send_command("VOLUME", volume)
 
     elif action_type == ACTION_TYPE_RECONNECT:
-        if coordinator.is_connected:
-            await coordinator.async_disconnect()
-        await coordinator.async_request_refresh()
+        try:
+            await coordinator.async_reconnect()
+        except UpdateFailed as err:
+            raise HomeAssistantError(str(err)) from err
 
 
 async def async_get_action_capabilities(
