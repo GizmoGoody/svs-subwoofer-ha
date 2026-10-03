@@ -365,8 +365,10 @@ def svs_decode(frame: bytes) -> dict[str, Any]:
                     frame_type in ["READ_RESP", "MEMWRITE"]
                     and len(data_payload) >= param_info.n_bytes
                 ):
-                    # Decode the value
+                    # Decode the value, and always step past its bytes so a
+                    # rejected value cannot shift every value after it
                     raw_bytes = data_payload[: param_info.n_bytes]
+                    data_payload = data_payload[param_info.n_bytes :]
 
                     if param_info.limits_type == 2:
                         # String value
@@ -381,22 +383,26 @@ def svs_decode(frame: bytes) -> dict[str, Any]:
 
                         # Validate value
                         if param_info.limits_type == 1:
-                            if value not in param_info.limits:
-                                continue
+                            valid = value in param_info.limits
                         elif param_info.limits_type == 0:
-                            if not (
+                            valid = (
                                 min(param_info.limits)
                                 <= value
                                 <= max(param_info.limits)
-                            ):
-                                continue
+                            )
+                        else:
+                            valid = True
+                        if not valid:
+                            _LOGGER.debug(
+                                "Ignoring out-of-range %s value: %s", param_name, value
+                            )
+                            break
 
                         # Convert to int if it's a whole number
                         if isinstance(value, float) and value == int(value):
                             value = int(value)
 
                     result["VALIDATED_VALUES"][param_name] = value
-                    data_payload = data_payload[param_info.n_bytes :]
 
                 break
 
