@@ -419,59 +419,83 @@ def svs_decode(frame: bytes) -> dict[str, Any]:
     return result
 
 
-class FrameAssembler:
-    """Assembles fragmented BLE frames.
+# Smallest valid frame: preamble, type, length, and CRC
+MIN_FRAME_LENGTH = 7
 
-    BLE packets can be fragmented across multiple notifications.
-    This class accumulates data until a complete frame is received.
+# Largest frame accepted; anything longer is treated as a corrupt length field
+MAX_FRAME_LENGTH = 512
+
+
+class FrameAssembler:
+    """Splits the BLE notification stream into frames.
+
+    A frame can be split across several notifications, and one notification
+    can carry the end of one frame and the start of the next. The stream is
+    buffered and cut into frames using the length field in each frame header,
+    so frame boundaries do not have to line up with notification boundaries.
     """
 
     def __init__(self) -> None:
         """Initialize frame assembler."""
-        self._partial_frame: bytes = b""
-        self._sync: bool = True
+        self._buffer: bytes = b""
 
-    def add_data(self, data: bytes) -> dict[str, Any] | None:
-        """Add received data and return decoded frame if complete.
+    def add_data(self, data: bytes) -> list[dict[str, Any]]:
+        """Add received data and return every frame it completes.
 
         Args:
             data: Received BLE notification data.
 
         Returns:
-            Decoded frame dictionary if complete, None otherwise.
+            Decoded frames completed by this data, in the order received.
         """
-        if not data:
-            return None
+        self._buffer += bytes(data)
+        frames: list[dict[str, Any]] = []
 
-        # Check if this is a new frame start
-        if data[0] == int.from_bytes(FRAME_PREAMBLE, "little"):
-            if not self._sync:
+        while self._buffer:
+            start = self._buffer.find(FRAME_PREAMBLE)
+            if start < 0:
                 _LOGGER.debug(
-                    "Frame fragment out of sync: %s",
-                    bytes_to_hex_str(self._partial_frame),
+                    "Discarding data with no frame start: %s",
+                    bytes_to_hex_str(self._buffer),
                 )
-            self._partial_frame = bytes(data)
-        else:
-            # Continuation of existing frame
-            self._partial_frame = self._partial_frame + bytes(data)
+                self._buffer = b""
+                break
+            if start > 0:
+                _LOGGER.debug(
+                    "Discarding data before frame start: %s",
+                    bytes_to_hex_str(self._buffer[:start]),
+                )
+                self._buffer = self._buffer[start:]
 
-        # Try to decode
-        decoded = svs_decode(self._partial_frame)
-        self._sync = decoded["FRAME_RECOGNIZED"]
+            # Wait for the length field
+            if len(self._buffer) < 5:
+                break
+            length = int.from_bytes(self._buffer[3:5], "little")
+            if not MIN_FRAME_LENGTH <= length <= MAX_FRAME_LENGTH:
+                # Not a real frame start; look for the next one
+                self._buffer = self._buffer[1:]
+                continue
 
-        if self._sync:
+            # Wait for the rest of the frame
+            if len(self._buffer) < length:
+                break
+
+            decoded = svs_decode(self._buffer[:length])
+            if not decoded["FRAME_RECOGNIZED"]:
+                # Bad CRC, so the preamble byte was not a frame start
+                self._buffer = self._buffer[1:]
+                continue
+
             _LOGGER.debug(
                 "Received frame: %s %s",
                 decoded.get("FRAME_TYPE", "UNKNOWN"),
                 decoded.get("ATTRIBUTES", []),
             )
-            # Clear so a stray continuation doesn't concatenate onto a decoded frame
-            self._partial_frame = b""
-            return decoded
+            frames.append(decoded)
+            self._buffer = self._buffer[length:]
 
-        return None
+        return frames
 
     def reset(self) -> None:
         """Reset the frame assembler state."""
-        self._partial_frame = b""
-        self._sync = True
+        self._buffer = b""
