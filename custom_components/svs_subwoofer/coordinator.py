@@ -125,8 +125,10 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._settings_event = asyncio.Event()
         # Suppresses preset evaluation while a preset load is in flight
         self._loading_preset = False
-        # A preset setting was changed through HA since the last preset load
-        self._changed_since_load = False
+        # Settings as last changed through HA since the last preset load. While
+        # the sub still has these settings it is in Manual, even if they
+        # happen to match a preset again.
+        self._manual_settings: dict[str, float] | None = None
 
         # Settings are only present once the subwoofer has reported them, so
         # entities show unknown instead of made-up values until the first read
@@ -170,6 +172,26 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             int(number): settings
             for number, settings in stored.get("presets", {}).items()
         }
+        self._manual_settings = stored.get("manual")
+
+    def _save_preset_records(self) -> None:
+        """Persist the recorded presets and the Manual settings."""
+        self._preset_store.async_delay_save(
+            lambda: {
+                "presets": {
+                    str(number): values
+                    for number, values in self._preset_settings.items()
+                },
+                "manual": self._manual_settings,
+            },
+            1,
+        )
+
+    def _set_manual_settings(self, settings: dict[str, float] | None) -> None:
+        """Set or clear the settings that keep the sub in Manual."""
+        if settings != self._manual_settings:
+            self._manual_settings = settings
+            self._save_preset_records()
 
     def _current_preset_settings(self) -> dict[str, float] | None:
         """Return the current preset-relevant settings, or None if any is unknown."""
@@ -193,29 +215,30 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             return
         self._preset_settings[preset_number] = settings
-        self._preset_store.async_delay_save(
-            lambda: {
-                "presets": {
-                    str(number): values
-                    for number, values in self._preset_settings.items()
-                }
-            },
-            1,
-        )
+        self._save_preset_records()
 
     def _update_active_preset(self) -> None:
         """Work out which preset is active from the current settings.
 
-        A preset is active when the current settings equal its recorded
-        settings. When nothing matches, the sub is in Manual if every preset
-        is recorded or a setting was just changed through HA; otherwise an
-        unrecorded preset could be active, so the preset stays unknown.
+        After a setting is changed through HA, the sub stays in Manual for as
+        long as it keeps those settings, even if they match a preset again.
+        Otherwise a preset is active when the current settings equal its
+        recorded settings. When nothing matches, the sub is in Manual if every
+        preset is recorded; otherwise an unrecorded preset could be active, so
+        the preset stays unknown.
         """
         if self._loading_preset:
             return
         settings = self._current_preset_settings()
         if settings is None:
             return
+        if self._manual_settings is not None:
+            if settings == self._manual_settings:
+                self.data["ACTIVE_PRESET"] = PRESET_MANUAL
+                return
+            # The settings changed outside HA (for example a preset loaded
+            # from the SVS app), so Manual no longer applies
+            self._set_manual_settings(None)
         active = self.data.get("ACTIVE_PRESET")
         # Prefer the preset already shown, in case two presets are identical
         if active and self._preset_settings.get(active) == settings:
@@ -224,7 +247,7 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if recorded == settings:
                 self.data["ACTIVE_PRESET"] = number
                 return
-        if len(self._preset_settings) == PRESET_COUNT or self._changed_since_load:
+        if len(self._preset_settings) == PRESET_COUNT:
             self.data["ACTIVE_PRESET"] = PRESET_MANUAL
         else:
             self.data["ACTIVE_PRESET"] = None
@@ -496,8 +519,14 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 # so all paths (entities, services, sync_from) stay consistent.
                 self.data[param] = value
                 if param in PRESET_PARAMS:
-                    self._changed_since_load = True
-                    self._update_active_preset()
+                    # A change made through HA puts the sub in Manual until
+                    # the next preset load
+                    settings = self._current_preset_settings()
+                    if settings is None:
+                        self.data["ACTIVE_PRESET"] = PRESET_MANUAL
+                    else:
+                        self._set_manual_settings(settings)
+                        self._update_active_preset()
                 self.async_set_updated_data(self.data)
                 # Reset idle disconnect timer
                 self._schedule_idle_disconnect()
@@ -542,7 +571,7 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 # Track which preset is active and publish immediately;
                 # _request_full_settings will follow with the actual values.
                 self.data["ACTIVE_PRESET"] = preset_number
-                self._changed_since_load = False
+                self._set_manual_settings(None)
                 self.async_set_updated_data(self.data)
                 # After loading preset, read back and record its settings
                 self._settings_event.clear()
@@ -607,7 +636,7 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 await asyncio.sleep(COMMAND_DELAY)
                 # The preset now holds the current settings, so it is active
                 self._record_preset(preset_number)
-                self._changed_since_load = False
+                self._set_manual_settings(None)
                 self.data["ACTIVE_PRESET"] = preset_number
                 self.async_set_updated_data(self.data)
                 # Reset idle disconnect timer
