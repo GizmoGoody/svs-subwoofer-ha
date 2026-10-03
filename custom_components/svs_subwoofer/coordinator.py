@@ -414,7 +414,7 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if validated:
                 # Update our data store
                 self.data.update(validated)
-                _LOGGER.debug("Updated data: %s", validated)
+                _LOGGER.debug("Updated data from %s: %s", self.address, validated)
                 if any(param in validated for param in PRESET_PARAMS):
                     self._update_active_preset()
                 if all(param in validated for param in PRESET_PARAMS):
