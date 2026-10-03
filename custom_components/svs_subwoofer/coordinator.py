@@ -349,7 +349,7 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if validated:
                 # Update our data store
                 self.data.update(validated)
-                _LOGGER.debug("Updated data: %s", validated)
+                _LOGGER.debug("Updated data from %s: %s", self.address, validated)
                 # Notify listeners of new data
                 self.async_set_updated_data(self.data)
 
