@@ -103,7 +103,17 @@ bluetoothctl
 | Room Gain Frequency | Room gain corner frequency | 25/31/40 Hz |
 | Room Gain Slope | Room gain slope | 6/12 dB |
 | Standby Mode | Power mode | Auto ON/Trigger/ON |
-| Preset | Load saved preset | 1/2/3/Default |
+| Preset | Load saved preset, and show the active one | 1/2/3/Default/Manual |
+
+#### How the active preset is detected
+
+SVS subwoofers do not report which preset is loaded (the SVS app shows "NONE" for the same reason). Instead, the integration records each preset's settings whenever Home Assistant loads or saves it, keeps those records across restarts, and compares the subwoofer's current settings against them every time it connects or a setting changes.
+
+- **A preset name**: the current settings match that preset, even if it was loaded from the SVS app.
+- **Manual**: a setting has been changed since the preset was loaded, so the settings no longer match any preset.
+- **Unknown**: the settings do not match any recorded preset, and some presets have not been recorded yet, so one of those might be active.
+
+To get the most from this, load each preset from Home Assistant once. Standby mode is a system setting and is ignored when comparing. "Manual" cannot be selected; it only shows the state.
 
 ### Switches (Toggles)
 
