@@ -193,8 +193,9 @@ class SVSSelectEntity(CoordinatorEntity[SVSSubwooferCoordinator], SelectEntity):
         """Change the selected option."""
         _LOGGER.debug("Selecting %s for %s", option, self.entity_description.key)
 
-        # Manual is a state, not something that can be loaded
+        # Manual is not loaded onto the sub; it only marks the current settings
         if self.entity_description.is_preset and option == PRESET_MANUAL_OPTION:
+            self.coordinator.set_manual()
             return
 
         # Use dynamic preset map for presets

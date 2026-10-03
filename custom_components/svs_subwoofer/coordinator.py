@@ -668,6 +668,17 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 except BleakError as err:
                     _LOGGER.warning("Failed to request %s: %s", param, err)
 
+    def set_manual(self) -> None:
+        """Put the sub in Manual until the next preset load.
+
+        Nothing is sent to the subwoofer; its settings stay as they are.
+        """
+        settings = self._current_preset_settings()
+        if settings is not None:
+            self._set_manual_settings(settings)
+        self.data["ACTIVE_PRESET"] = PRESET_MANUAL
+        self.async_set_updated_data(self.data)
+
     async def async_disconnect(self, manual: bool = False) -> None:
         """Disconnect from the device.
 
