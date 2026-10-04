@@ -26,6 +26,7 @@ from .const import (
     EVENT_SVS_SUBWOOFER,
     PRESET_MANUAL,
     PRESET_PARAMS,
+    QUIET_KEEP_ALIVE_CHAR_UUID,
     SVS_CHAR_UUID,
     TRIGGER_SUBTYPE_DEFAULT,
     TRIGGER_TYPE_CONNECTED,
@@ -96,6 +97,7 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         address: str,
         name: str,
         keep_alive: bool = False,
+        quiet_keep_alive: bool = False,
     ) -> None:
         """Initialize coordinator.
 
@@ -106,6 +108,9 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             name: User-friendly name for the device.
             keep_alive: Stay connected and probe the link instead of
                 disconnecting when idle.
+            quiet_keep_alive: Stay connected and keep the link busy with a
+                standard Bluetooth read that does not reach the SVS control
+                software. Independent of keep_alive; both can run.
         """
         super().__init__(
             hass,
@@ -117,6 +122,8 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.device_name = name
         self._entry_id = entry_id
         self._keep_alive = keep_alive
+        self._quiet_keep_alive = quiet_keep_alive
+        self._quiet_keep_alive_task: asyncio.Task | None = None
         self._client: BleakClient | None = None
         self._frame_assembler = FrameAssembler()
         self._connected = False
@@ -318,7 +325,7 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         part-way through its own disconnect.
         """
         self._cancel_idle_disconnect()
-        if self._keep_alive:
+        if self._keep_alive or self._quiet_keep_alive:
             return
         self._idle_disconnect_task = self.hass.async_create_task(
             self._idle_disconnect_timer()
@@ -338,12 +345,53 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.async_disconnect()
 
     def _start_keep_alive(self) -> None:
-        """Start the keep-alive loop if enabled and not already running."""
-        if not self._keep_alive or self._keep_alive_task:
-            return
-        self._keep_alive_task = self.hass.async_create_background_task(
-            self._keep_alive_loop(), f"svs_subwoofer keep-alive {self.address}"
-        )
+        """Start each enabled keep-alive loop that is not already running."""
+        if self._keep_alive and not self._keep_alive_task:
+            self._keep_alive_task = self.hass.async_create_background_task(
+                self._keep_alive_loop(), f"svs_subwoofer keep-alive {self.address}"
+            )
+        if self._quiet_keep_alive and not self._quiet_keep_alive_task:
+            self._quiet_keep_alive_task = self.hass.async_create_background_task(
+                self._quiet_keep_alive_loop(),
+                f"svs_subwoofer quiet keep-alive {self.address}",
+            )
+
+    async def _quiet_keep_alive_loop(self) -> None:
+        """Keep the link busy with a read that does not wake the panel LEDs.
+
+        Only the Bluetooth link is checked here; whether the SVS control
+        software still answers is checked before each command instead.
+        """
+        while True:
+            await asyncio.sleep(KEEP_ALIVE_INTERVAL)
+            if self._manual_disconnect or time.monotonic() < self._retry_at:
+                continue
+            async with self._command_lock:
+                if not (self._connected and self._client and self._client.is_connected):
+                    try:
+                        await self._ensure_live(user_initiated=False)
+                    except UpdateFailed as err:
+                        _LOGGER.debug(
+                            "Quiet keep-alive reconnect to %s failed: %s",
+                            self.address,
+                            err,
+                        )
+                    continue
+                try:
+                    await asyncio.wait_for(
+                        self._client.read_gatt_char(QUIET_KEEP_ALIVE_CHAR_UUID),
+                        PROBE_TIMEOUT,
+                    )
+                except (BleakError, KeyError, TimeoutError) as err:
+                    _LOGGER.warning(
+                        "Quiet keep-alive read from %s failed (%s), reconnecting",
+                        self.address,
+                        err or type(err).__name__,
+                    )
+                    await self._async_drop_connection()
+                    self._note_silence()
+                    continue
+                _LOGGER.debug("Quiet keep-alive read from %s succeeded", self.address)
 
     async def _keep_alive_loop(self) -> None:
         """Keep the link busy and reconnect if it has silently died."""
@@ -839,6 +887,9 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._keep_alive_task:
             self._keep_alive_task.cancel()
             self._keep_alive_task = None
+        if self._quiet_keep_alive_task:
+            self._quiet_keep_alive_task.cancel()
+            self._quiet_keep_alive_task = None
         await self.async_disconnect()
         await super().async_shutdown()
 

@@ -56,6 +56,13 @@ PRESET_MANUAL_OPTION: Final = "Manual"
 # Options
 CONF_KEEP_ALIVE: Final = "keep_alive"
 DEFAULT_KEEP_ALIVE: Final = False
+CONF_QUIET_KEEP_ALIVE: Final = "quiet_keep_alive"
+DEFAULT_QUIET_KEEP_ALIVE: Final = False
+
+# Read by the quiet keep-alive: the Serial Number String of the standard
+# Device Information service. It is answered by the Bluetooth stack rather
+# than the SVS control software, so it should not wake the panel LEDs.
+QUIET_KEEP_ALIVE_CHAR_UUID: Final = "00002a25-0000-1000-8000-00805f9b34fb"
 
 # Command rate limiting (seconds)
 COMMAND_DELAY: Final = 0.2
