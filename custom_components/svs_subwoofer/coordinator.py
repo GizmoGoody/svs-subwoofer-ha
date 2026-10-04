@@ -25,6 +25,7 @@ from .const import (
     EVENT_SVS_SUBWOOFER,
     PRESET_MANUAL,
     PRESET_PARAMS,
+    SERIAL_NUMBER_CHAR_UUID,
     SVS_CHAR_UUID,
     TRIGGER_SUBTYPE_DEFAULT,
     TRIGGER_TYPE_CONNECTED,
@@ -154,6 +155,8 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "ACTIVE_PRESET": None,
         }
         self._device_id: str | None = None
+        # The serial number is read once per session
+        self._serial_read = False
 
     def _get_device_id(self) -> str | None:
         """Get the device ID from the device registry."""
@@ -272,12 +275,13 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     @property
     def device_info(self) -> DeviceInfo:
         """Return device info for the subwoofer."""
+        # No model here: the sub reports its own model name, and leaving it out
+        # keeps the last reported model instead of resetting it on every start
         return DeviceInfo(
             identifiers={(DOMAIN, self.address)},
             connections={(dr.CONNECTION_BLUETOOTH, self.address)},
             name=self.device_name,
             manufacturer="SVS",
-            model="Subwoofer",
         )
 
     @property
@@ -417,6 +421,7 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._responsive = False
         self._manual_disconnect = False
         _LOGGER.info("Connected to SVS Subwoofer at %s", self.address)
+        await self._async_read_serial_number()
         # Settings may have changed while we were away (e.g. via the SVS app).
         # The first answer marks the sub as connected; see
         # _notification_handler.
@@ -500,17 +505,49 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.async_set_updated_data(self.data)
 
     def _update_device_versions(self, values: dict[str, Any]) -> None:
-        """Show reported firmware and hardware versions on the device."""
-        changes = {}
+        """Show the reported firmware version and model on the device."""
+        changes: dict[str, str | None] = {}
         if "SW_VERSION" in values:
             changes["sw_version"] = values["SW_VERSION"]
         if "HW_VERSION" in values:
-            changes["hw_version"] = values["HW_VERSION"]
+            # The sub's "hardware version" is its model name, such as
+            # "SVS SB3000". The manufacturer is shown separately, so drop the
+            # brand. It is not a hardware revision, so the hardware version
+            # field stays empty.
+            model = values["HW_VERSION"].strip()
+            brand, _, rest = model.partition(" ")
+            if brand.upper() == "SVS":
+                model = rest.strip()
+            changes["model"] = model or None
+            changes["hw_version"] = None
+        self._update_device(changes)
+
+    def _update_device(self, changes: dict[str, str | None]) -> None:
+        """Write changed fields to this subwoofer's device registry entry."""
         if not changes:
             return
         device_id = self._get_device_id()
         if device_id:
             dr.async_get(self.hass).async_update_device(device_id, **changes)
+
+    async def _async_read_serial_number(self) -> None:
+        """Read the serial number from the standard Device Information service.
+
+        Read once per session; a sub without that characteristic is skipped.
+        Caller must hold _command_lock.
+        """
+        if self._serial_read or not self._client:
+            return
+        self._serial_read = True
+        try:
+            raw = await self._client.read_gatt_char(SERIAL_NUMBER_CHAR_UUID)
+        except (BleakError, KeyError, ValueError) as err:
+            _LOGGER.debug("No serial number from %s: %s", self.address, err)
+            return
+        serial = bytes(raw).decode("utf-8", errors="replace").strip("\x00 \r\n")
+        _LOGGER.debug("Serial number from %s: %s", self.address, serial)
+        if serial:
+            self._update_device({"serial_number": serial})
 
     async def _async_probe(self) -> bool:
         """Check the subwoofer still answers on the current connection.
