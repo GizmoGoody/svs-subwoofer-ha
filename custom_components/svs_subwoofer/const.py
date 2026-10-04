@@ -10,9 +10,6 @@ DOMAIN: Final = "svs_subwoofer"
 SVS_SERVICE_UUID: Final = "1fee6acf-a826-4e37-9635-4d8a01642c5d"
 SVS_CHAR_UUID: Final = "6409d79d-cd28-479c-a639-92f9e1948b43"
 
-# Standard Bluetooth Device Information service: Serial Number String
-SERIAL_NUMBER_CHAR_UUID: Final = "00002a25-0000-1000-8000-00805f9b34fb"
-
 # Parameter limits - Volume
 VOLUME_MIN: Final = -60
 VOLUME_MAX: Final = 0
