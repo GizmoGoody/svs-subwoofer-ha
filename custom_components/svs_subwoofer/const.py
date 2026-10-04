@@ -55,10 +55,7 @@ PRESET_MANUAL: Final = 0
 PRESET_MANUAL_OPTION: Final = "Manual"
 
 # Options
-CONF_KEEP_ALIVE: Final = "keep_alive"
-DEFAULT_KEEP_ALIVE: Final = False
-# Connection option: one of three modes. Older entries only have the
-# keep_alive flag, which maps to "stay_connected".
+# Connection option: one of three modes
 CONF_CONNECTION_MODE: Final = "connection_mode"
 CONNECTION_IDLE_DISCONNECT: Final = "idle_disconnect"
 CONNECTION_STAY_CONNECTED: Final = "stay_connected"
@@ -71,12 +68,10 @@ CONNECTION_MODES: Final = [
 
 
 def get_connection_mode(options: Mapping[str, Any]) -> str:
-    """Return the connection mode, honoring the older keep_alive flag."""
+    """Return the chosen connection mode, or the default if none is set."""
     mode = options.get(CONF_CONNECTION_MODE)
     if mode in CONNECTION_MODES:
         return mode
-    if options.get(CONF_KEEP_ALIVE, DEFAULT_KEEP_ALIVE):
-        return CONNECTION_STAY_CONNECTED
     return CONNECTION_IDLE_DISCONNECT
 
 
