@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from typing import Any
 
@@ -51,6 +52,10 @@ LIVENESS_STALE_AFTER = 20.0
 
 # How long to wait for the subwoofer to answer a probe (seconds)
 PROBE_TIMEOUT = 3.0
+
+
+# Two letters directly followed by four digits, such as "SB3000"
+_SERIES_MODEL = re.compile(r"^([A-Za-z]{2})(\d{4})(?!\d)")
 
 
 class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -168,11 +173,12 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     @property
     def device_info(self) -> DeviceInfo:
         """Return device info for the subwoofer."""
+        # No model here: the sub reports its own model name, and leaving it out
+        # keeps the last reported model instead of resetting it on every start
         return DeviceInfo(
             identifiers={(DOMAIN, self.address)},
             name=self.device_name,
             manufacturer="SVS",
-            model="Subwoofer",
         )
 
     @property
@@ -357,12 +363,28 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.async_set_updated_data(self.data)
 
     def _update_device_versions(self, values: dict[str, Any]) -> None:
-        """Show reported firmware and hardware versions on the device."""
-        changes = {}
+        """Show the reported firmware version and model on the device."""
+        changes: dict[str, str | None] = {}
         if "SW_VERSION" in values:
             changes["sw_version"] = values["SW_VERSION"]
         if "HW_VERSION" in values:
-            changes["hw_version"] = values["HW_VERSION"]
+            # The sub's "hardware version" is its model name, such as
+            # "SVS SB3000". The manufacturer is shown separately, so drop the
+            # brand. It is not a hardware revision, so the hardware version
+            # field stays empty.
+            model = values["HW_VERSION"].strip()
+            brand, _, rest = model.partition(" ")
+            if brand.upper() == "SVS":
+                model = rest.strip()
+            # SVS writes its series models as "SB-3000" or "PB-4000 Pro", but the
+            # sub reports "SB3000"; restore the hyphen for that pattern only
+            model = _SERIES_MODEL.sub(r"\1-\2", model)
+            changes["model"] = model or None
+            changes["hw_version"] = None
+        self._update_device(changes)
+
+    def _update_device(self, changes: dict[str, str | None]) -> None:
+        """Write changed fields to this subwoofer's device registry entry."""
         if not changes:
             return
         device_id = self._get_device_id()
