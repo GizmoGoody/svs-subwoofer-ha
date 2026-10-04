@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from typing import Any
 
@@ -79,6 +80,10 @@ def preset_store(hass: HomeAssistant, address: str) -> Store[dict[str, Any]]:
         PRESET_STORAGE_VERSION,
         f"{DOMAIN}.presets.{address.replace(':', '').lower()}",
     )
+
+
+# Two letters directly followed by four digits, such as "SB3000"
+_SERIES_MODEL = re.compile(r"^([A-Za-z]{2})(\d{4})(?!\d)")
 
 
 class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -514,6 +519,9 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             brand, _, rest = model.partition(" ")
             if brand.upper() == "SVS":
                 model = rest.strip()
+            # SVS writes its series models as "SB-3000" or "PB-4000 Pro", but the
+            # sub reports "SB3000"; restore the hyphen for that pattern only
+            model = _SERIES_MODEL.sub(r"\1-\2", model)
             changes["model"] = model or None
             changes["hw_version"] = None
             # TEMPORARY (dev only): clear the wrong serial number stored by an
