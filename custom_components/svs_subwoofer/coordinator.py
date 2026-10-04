@@ -108,9 +108,9 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             name: User-friendly name for the device.
             keep_alive: Stay connected and probe the link instead of
                 disconnecting when idle.
-            quiet_keep_alive: Stay connected and keep the link busy with a
-                standard Bluetooth read that does not reach the SVS control
-                software. Independent of keep_alive; both can run.
+            quiet_keep_alive: Stay connected quietly: keep the link busy with
+                a standard Bluetooth read that does not reach the SVS control
+                software. The connection option sets at most one of the two.
         """
         super().__init__(
             hass,
@@ -353,7 +353,7 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._quiet_keep_alive and not self._quiet_keep_alive_task:
             self._quiet_keep_alive_task = self.hass.async_create_background_task(
                 self._quiet_keep_alive_loop(),
-                f"svs_subwoofer quiet keep-alive {self.address}",
+                f"svs_subwoofer stay connected quietly {self.address}",
             )
 
     async def _quiet_keep_alive_loop(self) -> None:
@@ -372,7 +372,7 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         await self._ensure_live(user_initiated=False)
                     except UpdateFailed as err:
                         _LOGGER.debug(
-                            "Quiet keep-alive reconnect to %s failed: %s",
+                            "Staying connected quietly: reconnect to %s failed: %s",
                             self.address,
                             err,
                         )
@@ -384,14 +384,16 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     )
                 except (BleakError, KeyError, TimeoutError) as err:
                     _LOGGER.warning(
-                        "Quiet keep-alive read from %s failed (%s), reconnecting",
+                        "Staying connected quietly: read from %s failed (%s), reconnecting",
                         self.address,
                         err or type(err).__name__,
                     )
                     await self._async_drop_connection()
                     self._note_silence()
                     continue
-                _LOGGER.debug("Quiet keep-alive read from %s succeeded", self.address)
+                _LOGGER.debug(
+                    "Staying connected quietly: read from %s succeeded", self.address
+                )
 
     async def _keep_alive_loop(self) -> None:
         """Keep the link busy and reconnect if it has silently died."""

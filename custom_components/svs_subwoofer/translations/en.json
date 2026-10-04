@@ -38,10 +38,9 @@
     "step": {
       "init": {
         "title": "Connection Options",
-        "description": "By default the integration disconnects after 60 seconds without commands so the SVS app can connect. Both options below keep the connection open instead, and they can be used together. \"Stay connected\" asks the subwoofer for its settings every 30 seconds and reconnects if it stops answering; on some subwoofers this briefly lights the panel LEDs each time. \"Quiet keep-alive\" keeps the Bluetooth link busy every 30 seconds with a standard Bluetooth read that the subwoofer's control software does not see; whether the subwoofer still answers is then checked before each command. Use the Disconnect button when you need the SVS app.",
+        "description": "Choose how the integration handles the Bluetooth connection. \"Disconnect when idle\" disconnects after 60 seconds without commands, so the SVS app can connect. \"Stay connected\" keeps the connection open and asks the subwoofer for its settings every 30 seconds, reconnecting if it stops answering; on some subwoofers this briefly lights the panel LEDs each time. \"Stay connected quietly\" keeps the connection open with a standard Bluetooth read every 30 seconds that the subwoofer's control software does not see; whether the subwoofer still answers is checked before each command. Use the Disconnect button when you need the SVS app.",
         "data": {
-          "keep_alive": "Stay connected",
-          "quiet_keep_alive": "Quiet keep-alive"
+          "connection_mode": "Connection"
         }
       }
     }
@@ -162,6 +161,15 @@
       "save_preset": "Save to preset",
       "set_volume": "Set volume",
       "reconnect": "Reconnect"
+    }
+  },
+  "selector": {
+    "connection_mode": {
+      "options": {
+        "idle_disconnect": "Disconnect when idle",
+        "stay_connected": "Stay connected",
+        "stay_connected_quietly": "Stay connected quietly"
+      }
     }
   }
 }

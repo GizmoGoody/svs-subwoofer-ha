@@ -19,11 +19,10 @@ from homeassistant.core import Event, HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import (
-    CONF_KEEP_ALIVE,
-    CONF_QUIET_KEEP_ALIVE,
-    DEFAULT_KEEP_ALIVE,
-    DEFAULT_QUIET_KEEP_ALIVE,
+    CONNECTION_STAY_CONNECTED,
+    CONNECTION_STAY_CONNECTED_QUIETLY,
     DOMAIN,
+    get_connection_mode,
 )
 from .coordinator import SVSSubwooferCoordinator, preset_store
 from .services import async_setup_services, async_unload_services
@@ -53,9 +52,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: SVSConfigEntry) -> bool:
         entry.entry_id,
         address,
         name,
-        keep_alive=entry.options.get(CONF_KEEP_ALIVE, DEFAULT_KEEP_ALIVE),
-        quiet_keep_alive=entry.options.get(
-            CONF_QUIET_KEEP_ALIVE, DEFAULT_QUIET_KEEP_ALIVE
+        keep_alive=get_connection_mode(entry.options) == CONNECTION_STAY_CONNECTED,
+        quiet_keep_alive=(
+            get_connection_mode(entry.options) == CONNECTION_STAY_CONNECTED_QUIETLY
         ),
     )
 

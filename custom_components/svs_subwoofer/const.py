@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Final
+from collections.abc import Mapping
+from typing import Any, Final
 
 DOMAIN: Final = "svs_subwoofer"
 
@@ -56,10 +57,30 @@ PRESET_MANUAL_OPTION: Final = "Manual"
 # Options
 CONF_KEEP_ALIVE: Final = "keep_alive"
 DEFAULT_KEEP_ALIVE: Final = False
-CONF_QUIET_KEEP_ALIVE: Final = "quiet_keep_alive"
-DEFAULT_QUIET_KEEP_ALIVE: Final = False
+# Connection option: one of three modes. Older entries only have the
+# keep_alive flag, which maps to "stay_connected".
+CONF_CONNECTION_MODE: Final = "connection_mode"
+CONNECTION_IDLE_DISCONNECT: Final = "idle_disconnect"
+CONNECTION_STAY_CONNECTED: Final = "stay_connected"
+CONNECTION_STAY_CONNECTED_QUIETLY: Final = "stay_connected_quietly"
+CONNECTION_MODES: Final = [
+    CONNECTION_IDLE_DISCONNECT,
+    CONNECTION_STAY_CONNECTED,
+    CONNECTION_STAY_CONNECTED_QUIETLY,
+]
 
-# Read by the quiet keep-alive: the Serial Number String of the standard
+
+def get_connection_mode(options: Mapping[str, Any]) -> str:
+    """Return the connection mode, honoring the older keep_alive flag."""
+    mode = options.get(CONF_CONNECTION_MODE)
+    if mode in CONNECTION_MODES:
+        return mode
+    if options.get(CONF_KEEP_ALIVE, DEFAULT_KEEP_ALIVE):
+        return CONNECTION_STAY_CONNECTED
+    return CONNECTION_IDLE_DISCONNECT
+
+
+# Read when staying connected quietly: the Serial Number String of the standard
 # Device Information service. It is answered by the Bluetooth stack rather
 # than the SVS control software, so it should not wake the panel LEDs.
 QUIET_KEEP_ALIVE_CHAR_UUID: Final = "00002a25-0000-1000-8000-00805f9b34fb"

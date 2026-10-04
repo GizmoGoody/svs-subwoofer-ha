@@ -19,14 +19,18 @@ from homeassistant.config_entries import (
 from homeassistant.const import CONF_ADDRESS, CONF_NAME
 from homeassistant.core import callback
 from homeassistant.helpers.device_registry import format_mac
+from homeassistant.helpers.selector import (
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
 
 from .const import (
-    CONF_KEEP_ALIVE,
-    CONF_QUIET_KEEP_ALIVE,
-    DEFAULT_KEEP_ALIVE,
-    DEFAULT_QUIET_KEEP_ALIVE,
+    CONF_CONNECTION_MODE,
+    CONNECTION_MODES,
     DOMAIN,
     SVS_SERVICE_UUID,
+    get_connection_mode,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -280,18 +284,16 @@ class SVSSubwooferOptionsFlow(OptionsFlow):
             step_id="init",
             data_schema=vol.Schema(
                 {
-                    vol.Optional(
-                        CONF_KEEP_ALIVE,
-                        default=self._entry.options.get(
-                            CONF_KEEP_ALIVE, DEFAULT_KEEP_ALIVE
-                        ),
-                    ): bool,
-                    vol.Optional(
-                        CONF_QUIET_KEEP_ALIVE,
-                        default=self._entry.options.get(
-                            CONF_QUIET_KEEP_ALIVE, DEFAULT_QUIET_KEEP_ALIVE
-                        ),
-                    ): bool,
+                    vol.Required(
+                        CONF_CONNECTION_MODE,
+                        default=get_connection_mode(self._entry.options),
+                    ): SelectSelector(
+                        SelectSelectorConfig(
+                            options=CONNECTION_MODES,
+                            translation_key=CONF_CONNECTION_MODE,
+                            mode=SelectSelectorMode.LIST,
+                        )
+                    ),
                 }
             ),
         )
