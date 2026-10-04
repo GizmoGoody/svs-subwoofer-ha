@@ -574,9 +574,6 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             model = _SERIES_MODEL.sub(r"\1-\2", model)
             changes["model"] = model or None
             changes["hw_version"] = None
-            # TEMPORARY (dev only): clear the wrong serial number stored by an
-            # earlier dev build. Remove after one deploy.
-            changes["serial_number"] = None
         self._update_device(changes)
 
     def _update_device(self, changes: dict[str, str | None]) -> None:
