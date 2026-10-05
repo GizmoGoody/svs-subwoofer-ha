@@ -20,6 +20,9 @@ from homeassistant.const import CONF_ADDRESS, CONF_NAME
 from homeassistant.core import callback
 from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.selector import (
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
@@ -27,7 +30,12 @@ from homeassistant.helpers.selector import (
 
 from .const import (
     CONF_CONNECTION_MODE,
+    CONF_DISCONNECT_AFTER,
+    CONF_RECONNECT_INTERVAL,
     CONNECTION_MODES,
+    CONNECTION_PERIODIC,
+    DEFAULT_DISCONNECT_AFTER,
+    DEFAULT_RECONNECT_INTERVAL,
     DOMAIN,
     SVS_SERVICE_UUID,
     get_connection_mode,
@@ -265,8 +273,25 @@ class SVSSubwooferConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
 
+def _seconds_selector(minimum: int, maximum: int, step: int) -> NumberSelector:
+    """Return a number box for a duration in seconds."""
+    return NumberSelector(
+        NumberSelectorConfig(
+            min=minimum,
+            max=maximum,
+            step=step,
+            unit_of_measurement="s",
+            mode=NumberSelectorMode.BOX,
+        )
+    )
+
+
 class SVSSubwooferOptionsFlow(OptionsFlow):
-    """Handle options for SVS Subwoofer."""
+    """Handle the Bluetooth connection options for SVS Subwoofer.
+
+    The timing options only apply to the Periodic connection, so they are
+    shown on a second step only in that case.
+    """
 
     def __init__(self, config_entry: ConfigEntry) -> None:
         """Initialize options flow."""
@@ -276,9 +301,23 @@ class SVSSubwooferOptionsFlow(OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Manage the connection options."""
+        """Choose the connection mode."""
+        options = self._entry.options
         if user_input is not None:
-            return self.async_create_entry(data=user_input)
+            if user_input[CONF_CONNECTION_MODE] == CONNECTION_PERIODIC:
+                return await self.async_step_timing()
+            # Keep the timing values for when Periodic is chosen again
+            return self.async_create_entry(
+                data={
+                    CONF_CONNECTION_MODE: user_input[CONF_CONNECTION_MODE],
+                    CONF_RECONNECT_INTERVAL: options.get(
+                        CONF_RECONNECT_INTERVAL, DEFAULT_RECONNECT_INTERVAL
+                    ),
+                    CONF_DISCONNECT_AFTER: options.get(
+                        CONF_DISCONNECT_AFTER, DEFAULT_DISCONNECT_AFTER
+                    ),
+                }
+            )
 
         return self.async_show_form(
             step_id="init",
@@ -294,6 +333,36 @@ class SVSSubwooferOptionsFlow(OptionsFlow):
                             mode=SelectSelectorMode.LIST,
                         )
                     ),
+                }
+            ),
+        )
+
+    async def async_step_timing(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Set the Periodic connection timing."""
+        if user_input is not None and CONF_RECONNECT_INTERVAL in user_input:
+            return self.async_create_entry(
+                data={CONF_CONNECTION_MODE: CONNECTION_PERIODIC, **user_input}
+            )
+
+        options = self._entry.options
+        return self.async_show_form(
+            step_id="timing",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_RECONNECT_INTERVAL,
+                        default=options.get(
+                            CONF_RECONNECT_INTERVAL, DEFAULT_RECONNECT_INTERVAL
+                        ),
+                    ): _seconds_selector(0, 3600, 10),
+                    vol.Required(
+                        CONF_DISCONNECT_AFTER,
+                        default=options.get(
+                            CONF_DISCONNECT_AFTER, DEFAULT_DISCONNECT_AFTER
+                        ),
+                    ): _seconds_selector(10, 600, 10),
                 }
             ),
         )

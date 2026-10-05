@@ -98,6 +98,8 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         name: str,
         keep_alive: bool = False,
         quiet_keep_alive: bool = False,
+        idle_timeout: float = IDLE_DISCONNECT_TIMEOUT,
+        refresh_interval: float = 0,
     ) -> None:
         """Initialize coordinator.
 
@@ -108,9 +110,15 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             name: User-friendly name for the device.
             keep_alive: Stay connected and probe the link instead of
                 disconnecting when idle.
-            quiet_keep_alive: Stay connected quietly: keep the link busy with
-                a standard Bluetooth read that does not reach the SVS control
-                software. The connection option sets at most one of the two.
+            quiet_keep_alive: Stay connected (Quiet connection): keep the link
+                busy with a standard Bluetooth read that does not reach the SVS
+                control software. The connection option sets at most one of
+                keep_alive and quiet_keep_alive.
+            idle_timeout: Periodic connection: seconds without commands
+                before disconnecting.
+            refresh_interval: Periodic connection: seconds between brief
+                connections that refresh the settings while disconnected;
+                0 only connects when a command is sent.
         """
         super().__init__(
             hass,
@@ -124,6 +132,9 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._keep_alive = keep_alive
         self._quiet_keep_alive = quiet_keep_alive
         self._quiet_keep_alive_task: asyncio.Task | None = None
+        self._idle_timeout = idle_timeout
+        self._refresh_interval = refresh_interval
+        self._refresh_task: asyncio.Task | None = None
         self._client: BleakClient | None = None
         self._frame_assembler = FrameAssembler()
         self._connected = False
@@ -340,7 +351,7 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _idle_disconnect_timer(self) -> None:
         """Wait for idle timeout then disconnect."""
-        await asyncio.sleep(IDLE_DISCONNECT_TIMEOUT)
+        await asyncio.sleep(self._idle_timeout)
         _LOGGER.debug("Idle timeout reached, disconnecting from %s", self.address)
         await self.async_disconnect()
 
@@ -353,8 +364,40 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._quiet_keep_alive and not self._quiet_keep_alive_task:
             self._quiet_keep_alive_task = self.hass.async_create_background_task(
                 self._quiet_keep_alive_loop(),
-                f"svs_subwoofer stay connected quietly {self.address}",
+                f"svs_subwoofer quiet connection {self.address}",
             )
+        if (
+            self._refresh_interval > 0
+            and not (self._keep_alive or self._quiet_keep_alive)
+            and not self._refresh_task
+        ):
+            self._refresh_task = self.hass.async_create_background_task(
+                self._refresh_loop(),
+                f"svs_subwoofer periodic connection {self.address}",
+            )
+
+    async def _refresh_loop(self) -> None:
+        """Periodic connection: briefly reconnect to refresh the settings.
+
+        Connecting reads all settings; the idle timer then disconnects again.
+        Nothing is done while a connection is already open.
+        """
+        while True:
+            await asyncio.sleep(self._refresh_interval)
+            if self._manual_disconnect or time.monotonic() < self._retry_at:
+                continue
+            async with self._command_lock:
+                if self._connected:
+                    continue
+                try:
+                    await self._ensure_live(user_initiated=False)
+                except UpdateFailed as err:
+                    _LOGGER.debug(
+                        "Periodic connection to %s failed: %s", self.address, err
+                    )
+                    continue
+                _LOGGER.debug("Periodic connection refreshed %s", self.address)
+                self._schedule_idle_disconnect()
 
     async def _quiet_keep_alive_loop(self) -> None:
         """Keep the link busy with a read that does not wake the panel LEDs.
@@ -372,7 +415,7 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         await self._ensure_live(user_initiated=False)
                     except UpdateFailed as err:
                         _LOGGER.debug(
-                            "Staying connected quietly: reconnect to %s failed: %s",
+                            "Quiet connection: reconnect to %s failed: %s",
                             self.address,
                             err,
                         )
@@ -384,16 +427,14 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     )
                 except (BleakError, KeyError, TimeoutError) as err:
                     _LOGGER.warning(
-                        "Staying connected quietly: read from %s failed (%s), reconnecting",
+                        "Quiet connection: read from %s failed (%s), reconnecting",
                         self.address,
                         err or type(err).__name__,
                     )
                     await self._async_drop_connection()
                     self._note_silence()
                     continue
-                _LOGGER.debug(
-                    "Staying connected quietly: read from %s succeeded", self.address
-                )
+                _LOGGER.debug("Quiet connection: read from %s succeeded", self.address)
 
     async def _keep_alive_loop(self) -> None:
         """Keep the link busy and reconnect if it has silently died."""
@@ -889,6 +930,9 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._quiet_keep_alive_task:
             self._quiet_keep_alive_task.cancel()
             self._quiet_keep_alive_task = None
+        if self._refresh_task:
+            self._refresh_task.cancel()
+            self._refresh_task = None
         await self.async_disconnect()
         await super().async_shutdown()
 

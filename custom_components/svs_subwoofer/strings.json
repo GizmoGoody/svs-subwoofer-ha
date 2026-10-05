@@ -37,10 +37,25 @@
   "options": {
     "step": {
       "init": {
-        "title": "Connection Options",
-        "description": "Choose how the integration handles the Bluetooth connection. \"Disconnect when idle\" disconnects after 60 seconds without commands, so the SVS app can connect. \"Stay connected\" keeps the connection open and asks the subwoofer for its settings every 30 seconds, reconnecting if it stops answering; on some subwoofers this briefly lights the panel LEDs each time. \"Stay connected quietly\" keeps the connection open with a standard Bluetooth read every 30 seconds that the subwoofer's control software does not see; whether the subwoofer still answers is checked before each command. Use the Disconnect button when you need the SVS app.",
+        "title": "Bluetooth Connection Options",
+        "description": "SVS subwoofers accept only one Bluetooth connection at a time, so the SVS app cannot connect while Home Assistant is connected. Use the Disconnect button when you need the SVS app.",
         "data": {
           "connection_mode": "Connection"
+        },
+        "data_description": {
+          "connection_mode": "Periodic connects when needed and disconnects after a period without commands; select Submit to set the timing. Choose Constant or Quiet if commands stop working after the subwoofer has been idle: both keep the connection open and check it every 30 seconds. Constant checks by asking the subwoofer for its settings, which briefly lights the panel LEDs each time. Quiet checks with a standard Bluetooth read that does not light the LEDs, and checks that the subwoofer answers before each command."
+        }
+      },
+      "timing": {
+        "title": "Bluetooth Connection Options",
+        "description": "These settings apply to the Periodic connection.",
+        "data": {
+          "reconnect_interval": "Reconnect interval",
+          "disconnect_after": "Disconnect after"
+        },
+        "data_description": {
+          "reconnect_interval": "While disconnected, how often Home Assistant briefly connects to refresh the subwoofer's settings (for example after a change made in the SVS app). Set to 0 to connect only when a command is sent.",
+          "disconnect_after": "How long the connection remains active after the last command."
         }
       }
     }
@@ -166,9 +181,9 @@
   "selector": {
     "connection_mode": {
       "options": {
-        "idle_disconnect": "Disconnect when idle",
-        "stay_connected": "Stay connected",
-        "stay_connected_quietly": "Stay connected quietly"
+        "periodic": "Periodic",
+        "constant": "Constant",
+        "quiet": "Quiet"
       }
     }
   }

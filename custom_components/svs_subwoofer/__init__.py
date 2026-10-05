@@ -19,8 +19,13 @@ from homeassistant.core import Event, HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import (
-    CONNECTION_STAY_CONNECTED,
-    CONNECTION_STAY_CONNECTED_QUIETLY,
+    CONF_DISCONNECT_AFTER,
+    CONF_RECONNECT_INTERVAL,
+    CONNECTION_CONSTANT,
+    CONNECTION_PERIODIC,
+    CONNECTION_QUIET,
+    DEFAULT_DISCONNECT_AFTER,
+    DEFAULT_RECONNECT_INTERVAL,
     DOMAIN,
     get_connection_mode,
 )
@@ -47,14 +52,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: SVSConfigEntry) -> bool:
 
     _LOGGER.debug("Setting up SVS Subwoofer: %s (%s)", name, address)
 
+    mode = get_connection_mode(entry.options)
     coordinator = SVSSubwooferCoordinator(
         hass,
         entry.entry_id,
         address,
         name,
-        keep_alive=get_connection_mode(entry.options) == CONNECTION_STAY_CONNECTED,
-        quiet_keep_alive=(
-            get_connection_mode(entry.options) == CONNECTION_STAY_CONNECTED_QUIETLY
+        keep_alive=mode == CONNECTION_CONSTANT,
+        quiet_keep_alive=mode == CONNECTION_QUIET,
+        idle_timeout=entry.options.get(CONF_DISCONNECT_AFTER, DEFAULT_DISCONNECT_AFTER),
+        refresh_interval=(
+            entry.options.get(CONF_RECONNECT_INTERVAL, DEFAULT_RECONNECT_INTERVAL)
+            if mode == CONNECTION_PERIODIC
+            else 0
         ),
     )
 

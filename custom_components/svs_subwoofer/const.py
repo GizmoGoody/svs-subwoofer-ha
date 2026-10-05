@@ -57,14 +57,19 @@ PRESET_MANUAL_OPTION: Final = "Manual"
 # Options
 # Connection option: one of three modes
 CONF_CONNECTION_MODE: Final = "connection_mode"
-CONNECTION_IDLE_DISCONNECT: Final = "idle_disconnect"
-CONNECTION_STAY_CONNECTED: Final = "stay_connected"
-CONNECTION_STAY_CONNECTED_QUIETLY: Final = "stay_connected_quietly"
-CONNECTION_MODES: Final = [
-    CONNECTION_IDLE_DISCONNECT,
-    CONNECTION_STAY_CONNECTED,
-    CONNECTION_STAY_CONNECTED_QUIETLY,
-]
+# Connect when needed, disconnect after a period without commands
+CONNECTION_PERIODIC: Final = "periodic"
+# Stay connected, checking the sub with a settings request
+CONNECTION_CONSTANT: Final = "constant"
+# Stay connected with a read that does not wake the panel LEDs
+CONNECTION_QUIET: Final = "quiet"
+CONNECTION_MODES: Final = [CONNECTION_PERIODIC, CONNECTION_CONSTANT, CONNECTION_QUIET]
+
+# Periodic connection timing (seconds)
+CONF_RECONNECT_INTERVAL: Final = "reconnect_interval"
+DEFAULT_RECONNECT_INTERVAL: Final = 0  # 0: only connect when a command is sent
+CONF_DISCONNECT_AFTER: Final = "disconnect_after"
+DEFAULT_DISCONNECT_AFTER: Final = 60
 
 
 def get_connection_mode(options: Mapping[str, Any]) -> str:
@@ -72,10 +77,10 @@ def get_connection_mode(options: Mapping[str, Any]) -> str:
     mode = options.get(CONF_CONNECTION_MODE)
     if mode in CONNECTION_MODES:
         return mode
-    return CONNECTION_IDLE_DISCONNECT
+    return CONNECTION_PERIODIC
 
 
-# Read when staying connected quietly: the Serial Number String of the standard
+# Read by the Quiet connection: the Serial Number String of the standard
 # Device Information service. It is answered by the Bluetooth stack rather
 # than the SVS control software, so it should not wake the panel LEDs.
 QUIET_KEEP_ALIVE_CHAR_UUID: Final = "00002a25-0000-1000-8000-00805f9b34fb"
