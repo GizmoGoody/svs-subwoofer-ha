@@ -62,7 +62,7 @@ class SVSSubwooferConfigFlow(ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
         """Return the options flow."""
-        return SVSSubwooferOptionsFlow(config_entry)
+        return SVSSubwooferOptionsFlow()
 
     async def async_step_bluetooth(
         self, discovery_info: BluetoothServiceInfoBleak
@@ -274,7 +274,7 @@ class SVSSubwooferConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
 
-def _seconds_selector(minimum: int, maximum: int, step: int) -> NumberSelector:
+def _duration_selector(minimum: int, maximum: int, step: int) -> NumberSelector:
     """Return a number box for a duration in seconds."""
     return NumberSelector(
         NumberSelectorConfig(
@@ -294,16 +294,11 @@ class SVSSubwooferOptionsFlow(OptionsFlow):
     shown on a second step only in that case.
     """
 
-    def __init__(self, config_entry: ConfigEntry) -> None:
-        """Initialize options flow."""
-        # Not self.config_entry: assigning that is deprecated on newer HA
-        self._entry = config_entry
-
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Choose the connection mode."""
-        options = self._entry.options
+        options = self.config_entry.options
         if user_input is not None:
             if user_input[CONF_CONNECTION_MODE] == CONNECTION_PERIODIC:
                 return await self.async_step_timing()
@@ -326,7 +321,7 @@ class SVSSubwooferOptionsFlow(OptionsFlow):
                 {
                     vol.Required(
                         CONF_CONNECTION_MODE,
-                        default=get_connection_mode(self._entry.options),
+                        default=get_connection_mode(self.config_entry.options),
                     ): SelectSelector(
                         SelectSelectorConfig(
                             options=[
@@ -350,7 +345,7 @@ class SVSSubwooferOptionsFlow(OptionsFlow):
                 data={CONF_CONNECTION_MODE: CONNECTION_PERIODIC, **user_input}
             )
 
-        options = self._entry.options
+        options = self.config_entry.options
         return self.async_show_form(
             step_id="timing",
             data_schema=vol.Schema(
@@ -360,13 +355,13 @@ class SVSSubwooferOptionsFlow(OptionsFlow):
                         default=options.get(
                             CONF_RECONNECT_INTERVAL, DEFAULT_RECONNECT_INTERVAL
                         ),
-                    ): _seconds_selector(0, 3600, 10),
+                    ): _duration_selector(0, 3600, 10),
                     vol.Optional(
                         CONF_DISCONNECT_AFTER,
                         default=options.get(
                             CONF_DISCONNECT_AFTER, DEFAULT_DISCONNECT_AFTER
                         ),
-                    ): _seconds_selector(10, 600, 10),
+                    ): _duration_selector(10, 600, 10),
                 }
             ),
         )
