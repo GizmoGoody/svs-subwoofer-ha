@@ -23,6 +23,7 @@ from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
+    SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
@@ -328,7 +329,10 @@ class SVSSubwooferOptionsFlow(OptionsFlow):
                         default=get_connection_mode(self._entry.options),
                     ): SelectSelector(
                         SelectSelectorConfig(
-                            options=CONNECTION_MODES,
+                            options=[
+                                SelectOptionDict(value=mode, label=mode.capitalize())
+                                for mode in CONNECTION_MODES
+                            ],
                             translation_key=CONF_CONNECTION_MODE,
                             mode=SelectSelectorMode.LIST,
                         )
