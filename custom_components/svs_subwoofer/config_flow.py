@@ -345,7 +345,7 @@ class SVSSubwooferOptionsFlow(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Set the Periodic connection timing."""
-        if user_input is not None and CONF_RECONNECT_INTERVAL in user_input:
+        if user_input is not None:
             return self.async_create_entry(
                 data={CONF_CONNECTION_MODE: CONNECTION_PERIODIC, **user_input}
             )
@@ -355,13 +355,13 @@ class SVSSubwooferOptionsFlow(OptionsFlow):
             step_id="timing",
             data_schema=vol.Schema(
                 {
-                    vol.Required(
+                    vol.Optional(
                         CONF_RECONNECT_INTERVAL,
                         default=options.get(
                             CONF_RECONNECT_INTERVAL, DEFAULT_RECONNECT_INTERVAL
                         ),
                     ): _seconds_selector(0, 3600, 10),
-                    vol.Required(
+                    vol.Optional(
                         CONF_DISCONNECT_AFTER,
                         default=options.get(
                             CONF_DISCONNECT_AFTER, DEFAULT_DISCONNECT_AFTER
