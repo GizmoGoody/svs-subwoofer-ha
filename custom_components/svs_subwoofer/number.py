@@ -264,10 +264,9 @@ class SVSNumberEntity(CoordinatorEntity[SVSSubwooferCoordinator], NumberEntity):
 class SVSGroupVolumeNumber(SVSGroupEntity, RestoreNumber):
     """A group's volume, applied to every synced member.
 
-    The group volume G is remembered. In Matched mode every synced member is
-    set to G. In Offset mode each synced member is set to G plus its own
-    offset, and the slider shows the loudest synced member's level (G plus the
-    largest offset). Every change sends each member its absolute target, which
+    The group volume G is remembered and shown. In Matched mode every synced
+    member is set to G. In Offset mode each synced member is set to G plus its
+    own offset. Every change sends each member its absolute target, which
     restores the offsets after a member was changed on its own.
     """
 
@@ -283,14 +282,13 @@ class SVSGroupVolumeNumber(SVSGroupEntity, RestoreNumber):
         """Initialize the entity."""
         super().__init__(group, "volume")
         self._group_volume: float | None = None
-        self._loudest_offset = max(group.offsets.values(), default=0)
 
     async def async_added_to_hass(self) -> None:
         """Restore the group volume from before a restart."""
         await super().async_added_to_hass()
         last = await self.async_get_last_number_data()
         if last and last.native_value is not None:
-            self._group_volume = last.native_value - self._loudest_offset
+            self._group_volume = last.native_value
 
     def _member_group_volumes(self) -> list[float]:
         """Return the group volume each synced member's volume implies."""
@@ -303,7 +301,7 @@ class SVSGroupVolumeNumber(SVSGroupEntity, RestoreNumber):
 
     @property
     def native_value(self) -> float | None:
-        """Return the group volume as the loudest synced member hears it.
+        """Return the group volume.
 
         Shown while at least one synced member is still at its target, so
         changing one member on its own does not change the group. Unknown when
@@ -312,15 +310,15 @@ class SVSGroupVolumeNumber(SVSGroupEntity, RestoreNumber):
         implied = self._member_group_volumes()
         if self._group_volume is not None:
             if self._group_volume in implied:
-                return self._group_volume + self._loudest_offset
+                return self._group_volume
             return None
         if implied and len(set(implied)) == 1:
-            return implied[0] + self._loudest_offset
+            return implied[0]
         return None
 
     async def async_set_native_value(self, value: float) -> None:
         """Set every synced member to its target for this group volume."""
-        group_volume = int(value) - self._loudest_offset
+        group_volume = int(value)
         targets = {
             address: group_volume + offset
             for address, offset in self.svs_group.offsets.items()
