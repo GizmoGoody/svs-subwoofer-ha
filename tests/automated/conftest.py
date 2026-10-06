@@ -21,6 +21,9 @@ from custom_components.svs_subwoofer.const import DOMAIN
 
 ADDRESS = "54:B7:E5:82:D1:E2"
 NAME = "Test Sub"
+# A second subwoofer, for subwoofer groups
+ADDRESS2 = "54:B7:E5:82:CC:90"
+NAME2 = "Test Sub 2"
 
 SERIAL_UUID = "00002a25-0000-1000-8000-00805f9b34fb"
 MODEL_UUID = "00002a24-0000-1000-8000-00805f9b34fb"
@@ -286,9 +289,23 @@ def auto_enable_custom_integrations(enable_custom_integrations: Any) -> None:
 
 
 @pytest.fixture
-def sub() -> FakeSubwoofer:
-    """A fresh fake subwoofer."""
-    return FakeSubwoofer()
+def fake_subs() -> dict[str, FakeSubwoofer]:
+    """The fake subwoofers in range, by address."""
+    return {}
+
+
+@pytest.fixture
+def sub(fake_subs: dict[str, FakeSubwoofer]) -> FakeSubwoofer:
+    """A fresh fake subwoofer at ADDRESS."""
+    fake_subs[ADDRESS] = FakeSubwoofer()
+    return fake_subs[ADDRESS]
+
+
+@pytest.fixture
+def second_sub(fake_subs: dict[str, FakeSubwoofer]) -> FakeSubwoofer:
+    """A second fake subwoofer, at ADDRESS2."""
+    fake_subs[ADDRESS2] = FakeSubwoofer()
+    return fake_subs[ADDRESS2]
 
 
 SetupEntry = Callable[..., Any]
@@ -296,7 +313,7 @@ SetupEntry = Callable[..., Any]
 
 @pytest.fixture
 async def setup_entry(
-    hass: HomeAssistant, sub: FakeSubwoofer
+    hass: HomeAssistant, sub: FakeSubwoofer, fake_subs: dict[str, FakeSubwoofer]
 ) -> AsyncGenerator[SetupEntry]:
     """Set up config entries wired to the fake subwoofer; unload them afterwards."""
     # The Bluetooth integration itself is not needed: the connection is faked
@@ -310,9 +327,10 @@ async def setup_entry(
         disconnected_callback=None,
         **kwargs: Any,
     ) -> FakeBleakClient:
-        sub.connects += 1
-        sub.client = FakeBleakClient(sub, disconnected_callback)
-        return sub.client
+        fake = fake_subs[device.address]
+        fake.connects += 1
+        fake.client = FakeBleakClient(fake, disconnected_callback)
+        return fake.client
 
     with (
         # The real 0.2 s pause between commands only slows the tests down
@@ -323,16 +341,22 @@ async def setup_entry(
         patch.object(
             coordinator_module,
             "async_ble_device_from_address",
-            return_value=SimpleNamespace(address=ADDRESS, name=NAME),
+            side_effect=lambda hass, address, connectable=True: SimpleNamespace(
+                address=address, name=NAME2 if address == ADDRESS2 else NAME
+            ),
         ),
     ):
 
-        async def _setup(options: dict[str, Any] | None = None) -> MockConfigEntry:
+        async def _setup(
+            options: dict[str, Any] | None = None,
+            address: str = ADDRESS,
+            name: str = NAME,
+        ) -> MockConfigEntry:
             entry = MockConfigEntry(
                 domain=DOMAIN,
-                unique_id=ADDRESS.lower(),
-                title=NAME,
-                data={CONF_ADDRESS: ADDRESS, CONF_NAME: NAME},
+                unique_id=address.lower(),
+                title=name,
+                data={CONF_ADDRESS: address, CONF_NAME: name},
                 options=options or {},
             )
             entry.add_to_hass(hass)
@@ -358,8 +382,10 @@ async def settle(seconds: float = 0.3) -> None:
     await asyncio.sleep(seconds)
 
 
-def entity_id(hass: HomeAssistant, platform: str, key: str) -> str:
-    """Return the entity ID of one of the subwoofer's entities."""
-    found = er.async_get(hass).async_get_entity_id(platform, DOMAIN, f"{ADDRESS}_{key}")
+def entity_id(
+    hass: HomeAssistant, platform: str, key: str, address: str = ADDRESS
+) -> str:
+    """Return the entity ID of one of a subwoofer's entities."""
+    found = er.async_get(hass).async_get_entity_id(platform, DOMAIN, f"{address}_{key}")
     assert found, f"No {platform} entity with key {key}"
     return found

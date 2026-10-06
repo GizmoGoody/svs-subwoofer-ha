@@ -14,6 +14,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.svs_subwoofer.const import DOMAIN, SVS_SERVICE_UUID
 
 from .conftest import ADDRESS
+from .features import has
 
 DISCOVERY = SimpleNamespace(
     address=ADDRESS, name="LEFT", service_uuids=[SVS_SERVICE_UUID]
@@ -57,7 +58,8 @@ async def test_user_flow_picks_discovered_subwoofer(hass: HomeAssistant) -> None
             DOMAIN, context={"source": config_entries.SOURCE_USER}
         )
         assert result["type"] is FlowResultType.FORM
-        assert result["step_id"] == "user"
+        # With groups, the form moves to its own step behind the menu
+        assert result["step_id"] == ("add_subwoofer" if has("groups") else "user")
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], {CONF_ADDRESS: ADDRESS, CONF_NAME: ""}
         )

@@ -53,6 +53,8 @@ FEATURES: dict[str, Callable[[], bool]] = {
         _module("svs_protocol").svs_encode("SUB_INFO2", "")[0]
     ),
     "model_name": lambda: _has("coordinator", "_SERIES_MODEL"),
+    # Subwoofer groups
+    "groups": lambda: _has("const", "ENTRY_TYPE_GROUP"),
     # dev only (connection options)
     "connection_modes": lambda: _has("const", "CONF_CONNECTION_MODE"),
     "quiet_field_selection": lambda: _has("const", "QUIET_KEEP_ALIVE_CHAR_UUIDS"),
