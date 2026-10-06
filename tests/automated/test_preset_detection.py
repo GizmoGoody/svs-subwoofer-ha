@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 
 from .conftest import FakeSubwoofer, SetupEntry, entity_id, settle
 from .features import requires
@@ -95,3 +97,31 @@ async def test_preset_load_sends_only_the_load_command(
     frames_before = len(sub.received)
     await _select(hass, "HIGH")
     assert sub.frame_types()[frames_before:] == ["0704"]
+
+@requires("preset_load_retry")
+async def test_lost_preset_load_is_resent(
+    hass: HomeAssistant, sub: FakeSubwoofer, setup_entry: SetupEntry
+) -> None:
+    """A load the sub does not confirm is sent again."""
+    await setup_entry()
+    sub.ignore_loads = 1
+    frames_before = len(sub.received)
+    await _select(hass, "HIGH")
+    assert sub.frame_types()[frames_before:] == ["0704", "0704"]
+    assert sub.settings["VOLUME"] == -10
+    assert _preset(hass) == "HIGH"
+
+
+@requires("preset_load_retry")
+async def test_unconfirmed_preset_load_fails_and_records_nothing(
+    hass: HomeAssistant, sub: FakeSubwoofer, setup_entry: SetupEntry
+) -> None:
+    """A load that never arrives fails, and the old settings stay as they were."""
+    await setup_entry()
+    await _select(hass, "MEDIUM")
+    sub.ignore_loads = 2
+    with pytest.raises(HomeAssistantError):
+        await _select(hass, "HIGH")
+    assert sub.settings["VOLUME"] == -15
+    # MEDIUM's settings were not recorded as HIGH's
+    assert _preset(hass) == "MEDIUM"

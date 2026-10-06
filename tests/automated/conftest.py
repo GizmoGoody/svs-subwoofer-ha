@@ -135,6 +135,7 @@ class FakeSubwoofer:
     - Loading a preset applies it and pushes offsets 0x08 to 0x33 unasked
     - Writes are applied but not echoed
     - silent=True accepts the connection and answers nothing
+    - ignore_loads=N ignores the next N preset loads, as if they were lost
     """
 
     def __init__(self) -> None:
@@ -152,6 +153,7 @@ class FakeSubwoofer:
         }
         self.packing = "separate"
         self.silent = False
+        self.ignore_loads = 0
         self.client: FakeBleakClient | None = None
         self.connects = 0
         self.received: list[bytes] = []
@@ -201,6 +203,9 @@ class FakeSubwoofer:
         if frame_type == b"\x07\x04":  # PRESETLOADSAVE
             memory_id = int.from_bytes(body[0:4], "little")
             if 0x18 <= memory_id <= 0x1B:
+                if self.ignore_loads:
+                    self.ignore_loads -= 1
+                    return []
                 self.settings |= {
                     name: value
                     for name, value in self.presets[memory_id - 0x17].items()
