@@ -98,6 +98,7 @@ async def test_preset_load_sends_only_the_load_command(
     await _select(hass, "HIGH")
     assert sub.frame_types()[frames_before:] == ["0704"]
 
+
 @requires("preset_load_retry")
 async def test_lost_preset_load_is_resent(
     hass: HomeAssistant, sub: FakeSubwoofer, setup_entry: SetupEntry
