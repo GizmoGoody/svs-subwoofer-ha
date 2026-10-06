@@ -1,0 +1,105 @@
+name: Validate
+
+# This workflow lives only on the fork's "ci" branch, which is the fork's
+# default branch, so it can be started for any branch:
+#   gh workflow run validate.yml -f branch=<branch>
+#   gh run watch
+# The integration code comes from that branch; the tests and scripts come
+# from ci. Each test module checks whether the branch has its feature and is
+# skipped when it does not, so any branch can run the whole suite.
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Branch whose integration code is tested
+        required: true
+        default: dev
+  push:
+    branches: [ci]
+
+run-name: Validate ${{ inputs.branch || github.ref_name }}
+
+permissions:
+  contents: read
+
+jobs:
+  hassfest:
+    name: hassfest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch || github.ref_name }}
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    # The HACS action fetches the repository from GitHub instead of reading
+    # the checked-out files, so on a manually started run it validates the
+    # ci branch (repository-level checks), not the branch under test
+    name: HACS validation (ci branch)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hacs/action@main
+        with:
+          category: integration
+          # Brand images ship inside the integration (HA 2026.3+); topics and
+          # issues are repository settings, not code
+          ignore: brands topics issues
+          comment: false
+
+  ruff:
+    name: Ruff (lint and format)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch || github.ref_name }}
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: ci-tools
+      - name: Add the tests from ci
+        run: cp -r ci-tools/tests ci-tools/.github/scripts . && rm -rf ci-tools
+      - name: Lint
+        uses: astral-sh/ruff-action@v3
+        with:
+          src: custom_components tests/automated scripts
+          args: check --output-format=github
+      - name: Check formatting
+        if: success() || failure()
+        uses: astral-sh/ruff-action@v3
+        with:
+          src: custom_components tests/automated scripts
+          args: format --check --diff
+
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch || github.ref_name }}
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: ci-tools
+      - name: Add the tests from ci
+        run: |
+          cp -r ci-tools/tests ci-tools/pytest.ini .
+          mkdir -p .github && cp -r ci-tools/.github/scripts .github/
+          rm -rf ci-tools
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Install test dependencies
+        run: |
+          pip install pytest-homeassistant-custom-component
+          python .github/scripts/component_requirements.py > component-requirements.txt
+          cat component-requirements.txt
+          pip install -r component-requirements.txt
+      - name: Run tests
+        run: pytest --junitxml=junit.xml -q -rs
+      - name: Report failures as annotations
+        if: failure()
+        run: python .github/scripts/annotate_failures.py junit.xml
