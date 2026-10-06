@@ -18,9 +18,11 @@ from homeassistant.const import (
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import (
     CONF_DISCONNECT_AFTER,
+    CONF_ENTRY_TYPE,
     CONF_RECONNECT_INTERVAL,
     CONNECTION_CONSTANT,
     CONNECTION_PERIODIC,
@@ -28,9 +30,12 @@ from .const import (
     DEFAULT_DISCONNECT_AFTER,
     DEFAULT_RECONNECT_INTERVAL,
     DOMAIN,
+    ENTRY_TYPE_GROUP,
+    SIGNAL_MEMBERS_CHANGED,
     get_connection_mode,
 )
 from .coordinator import SVSSubwooferCoordinator, preset_store
+from .group import SVSGroup
 from .services import async_setup_services, async_unload_services
 
 _LOGGER = logging.getLogger(__name__)
@@ -43,11 +48,24 @@ PLATFORMS: list[Platform] = [
     Platform.SWITCH,
 ]
 
-type SVSConfigEntry = ConfigEntry[SVSSubwooferCoordinator]
+# A subwoofer group has no connection of its own, so it only has these
+GROUP_PLATFORMS: list[Platform] = [Platform.NUMBER, Platform.SELECT]
+
+type SVSConfigEntry = ConfigEntry[SVSSubwooferCoordinator | SVSGroup]
+
+
+def _is_group(entry: ConfigEntry) -> bool:
+    return entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_GROUP
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: SVSConfigEntry) -> bool:
     """Set up SVS Subwoofer from a config entry."""
+    if _is_group(entry):
+        entry.runtime_data = SVSGroup(hass, entry)
+        await hass.config_entries.async_forward_entry_setups(entry, GROUP_PLATFORMS)
+        entry.async_on_unload(entry.add_update_listener(_async_update_listener))
+        return True
+
     address = entry.data[CONF_ADDRESS]
     name = entry.data.get(CONF_NAME, "SVS Subwoofer")
 
@@ -94,6 +112,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: SVSConfigEntry) -> bool:
 
     # Set up platforms
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # Let groups pick up this subwoofer
+    async_dispatcher_send(hass, SIGNAL_MEMBERS_CHANGED)
 
     # Reload when options change so the connection mode takes effect
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
@@ -115,6 +135,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: SVSConfigEntry) -> bool
     """Unload a config entry."""
     _LOGGER.debug("Unloading SVS Subwoofer: %s", entry.title)
 
+    if _is_group(entry):
+        return await hass.config_entries.async_unload_platforms(entry, GROUP_PLATFORMS)
+
     # Unload platforms
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
@@ -122,6 +145,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: SVSConfigEntry) -> bool
         # Disconnect from device
         coordinator: SVSSubwooferCoordinator = hass.data[DOMAIN].pop(entry.entry_id)
         await coordinator.async_shutdown()
+        # Let groups drop this subwoofer
+        async_dispatcher_send(hass, SIGNAL_MEMBERS_CHANGED)
 
         # Unregister services when last device is removed
         if not hass.data[DOMAIN]:
@@ -132,6 +157,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: SVSConfigEntry) -> bool
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Delete the recorded preset settings when the subwoofer is removed."""
+    if _is_group(entry):
+        return
     await preset_store(hass, entry.data[CONF_ADDRESS]).async_remove()
 
 

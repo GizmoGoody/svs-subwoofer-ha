@@ -1,14 +1,6 @@
 {
   "config": {
     "step": {
-      "user": {
-        "title": "Add SVS Subwoofer",
-        "description": "Select your subwoofer from the list below. Devices are shown by the name you set in the SVS app (e.g., RIGHTSUB, LEFTSUB). Devices marked [SVS] are detected SVS subwoofers.\n\nLeave the name blank to use the device's advertised name.",
-        "data": {
-          "address": "Device",
-          "name": "Custom Name (optional)"
-        }
-      },
       "manual": {
         "title": "Manual Setup",
         "description": "Enter the Bluetooth MAC address of your SVS subwoofer. Format: {mac_format}\n\nTip: Use `bluetoothctl` and `scan on` to find your subwoofer's MAC address.",
@@ -23,11 +15,56 @@
         "data": {
           "name": "Device Name"
         }
+      },
+      "user": {
+        "title": "SVS Subwoofer",
+        "description": "Add another subwoofer, or combine subwoofers you have already added into a group.",
+        "menu_options": {
+          "add_subwoofer": "Add a subwoofer",
+          "create_group": "Create a subwoofer group"
+        }
+      },
+      "add_subwoofer": {
+        "title": "Add SVS Subwoofer",
+        "description": "Select your subwoofer from the list below. Devices are shown by the name you set in the SVS app (e.g., RIGHTSUB, LEFTSUB). Devices marked [SVS] are detected SVS subwoofers.\n\nLeave the name blank to use the device's advertised name.",
+        "data": {
+          "address": "Device",
+          "name": "Custom Name (optional)"
+        }
+      },
+      "create_group": {
+        "title": "Create a Subwoofer Group",
+        "description": "A group controls several subwoofers together from one device. Changing a subwoofer on its own never changes the group or the other subwoofers.",
+        "data": {
+          "name": "Group name",
+          "members": "Subwoofers",
+          "features": "Control together"
+        },
+        "data_description": {
+          "members": "Choose at least two subwoofers.",
+          "features": "Each setting chosen here gets one control for the whole group. Settings left out stay with each subwoofer."
+        }
+      },
+      "group_volume": {
+        "title": "Group Volume",
+        "description": "Choose how the group volume moves the subwoofers you sync with it.",
+        "data": {
+          "volume_mode": "Volume mode",
+          "synced_members": "Sync volume"
+        },
+        "data_description": {
+          "synced_members": "Subwoofers you do not sync keep their own volume. The group volume control appears once at least two subwoofers are synced."
+        }
+      },
+      "group_offsets": {
+        "title": "Volume Offsets",
+        "description": "Each synced subwoofer plays at the group volume plus its offset, in dB. The group volume control shows the level of the loudest synced subwoofer."
       }
     },
     "error": {
       "invalid_mac": "Invalid MAC address format",
-      "cannot_connect": "Failed to connect to device"
+      "cannot_connect": "Failed to connect to device",
+      "too_few_members": "Choose at least two subwoofers."
     },
     "abort": {
       "already_configured": "Device is already configured",
@@ -54,7 +91,37 @@
           "reconnect_interval": "While disconnected, how often Home Assistant briefly connects to refresh the subwoofer's settings, for example after a change made in the SVS app or on the rear panel. Each refresh briefly lights the panel LEDs. Set to 0 to connect only when a command is sent.",
           "disconnect_after": "How long the connection remains active after the last command. A shorter time frees the subwoofer for the SVS app sooner."
         }
+      },
+      "group_members": {
+        "title": "Subwoofer Group",
+        "description": "Change the subwoofers in this group and what it controls. To rename the group, use the rename option on its device or integration entry.",
+        "data": {
+          "members": "Subwoofers",
+          "features": "Control together"
+        },
+        "data_description": {
+          "members": "Choose at least two subwoofers.",
+          "features": "Each setting chosen here gets one control for the whole group. Settings left out stay with each subwoofer."
+        }
+      },
+      "group_volume": {
+        "title": "Group Volume",
+        "description": "Choose how the group volume moves the subwoofers you sync with it.",
+        "data": {
+          "volume_mode": "Volume mode",
+          "synced_members": "Sync volume"
+        },
+        "data_description": {
+          "synced_members": "Subwoofers you do not sync keep their own volume. The group volume control appears once at least two subwoofers are synced."
+        }
+      },
+      "group_offsets": {
+        "title": "Volume Offsets",
+        "description": "Each synced subwoofer plays at the group volume plus its offset, in dB. The group volume control shows the level of the loudest synced subwoofer."
       }
+    },
+    "error": {
+      "too_few_members": "Choose at least two subwoofers."
     }
   },
   "entity": {
@@ -116,6 +183,9 @@
       },
       "peq3_q_factor": {
         "name": "PEQ3 Q-Factor"
+      },
+      "group_volume": {
+        "name": "Volume"
       }
     },
     "select": {
@@ -133,6 +203,12 @@
       },
       "preset": {
         "name": "Preset"
+      },
+      "group_preset": {
+        "name": "Preset"
+      },
+      "group_standby_mode": {
+        "name": "Standby Mode"
       }
     },
     "switch": {
@@ -181,6 +257,19 @@
         "periodic": "Periodic – Connects when a command is sent and disconnects after a period without commands. Select Submit to set the timing.",
         "constant": "Constant – Stays connected and asks the subwoofer for its settings every 30 seconds, so a stalled subwoofer or a change made on its rear panel is noticed within 30 seconds. The panel LEDs light briefly at each check.",
         "quiet": "Quiet – Stays connected and checks only the Bluetooth link every 30 seconds, so the panel LEDs stay dark. A stalled subwoofer or a change made on its rear panel is noticed at the next command instead."
+      }
+    },
+    "features": {
+      "options": {
+        "preset": "Preset",
+        "standby": "Standby mode",
+        "volume": "Volume"
+      }
+    },
+    "volume_mode": {
+      "options": {
+        "matched": "Matched – Every synced subwoofer plays at the group volume.",
+        "offset": "Offset – Each synced subwoofer plays at the group volume plus its own offset."
       }
     }
   }
