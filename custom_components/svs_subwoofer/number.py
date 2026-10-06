@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 
@@ -9,6 +10,7 @@ from homeassistant.components.number import (
     NumberEntity,
     NumberEntityDescription,
     NumberMode,
+    RestoreNumber,
 )
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
@@ -18,6 +20,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import SVSConfigEntry
 from .const import (
+    GROUP_FEATURE_VOLUME,
     LPF_FREQ_MAX,
     LPF_FREQ_MIN,
     LPF_FREQ_STEP,
@@ -38,6 +41,7 @@ from .const import (
     VOLUME_STEP,
 )
 from .coordinator import SVSSubwooferCoordinator
+from .group import SVSGroup, SVSGroupEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -201,6 +205,13 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up SVS number entities."""
+    if isinstance(entry.runtime_data, SVSGroup):
+        group = entry.runtime_data
+        # The group volume only makes sense with at least two synced subs
+        if GROUP_FEATURE_VOLUME in group.features and len(group.synced) >= 2:
+            async_add_entities([SVSGroupVolumeNumber(group)])
+        return
+
     coordinator = entry.runtime_data
 
     async_add_entities(
@@ -248,3 +259,85 @@ class SVSNumberEntity(CoordinatorEntity[SVSSubwooferCoordinator], NumberEntity):
             raise HomeAssistantError(
                 f"Failed to set {self.entity_description.key} to {value}"
             )
+
+
+class SVSGroupVolumeNumber(SVSGroupEntity, RestoreNumber):
+    """A group's volume, applied to every synced member.
+
+    The group volume G is remembered. In Matched mode every synced member is
+    set to G. In Offset mode each synced member is set to G plus its own
+    offset, and the slider shows the loudest synced member's level (G plus the
+    largest offset). Every change sends each member its absolute target, which
+    restores the offsets after a member was changed on its own.
+    """
+
+    _attr_translation_key = "group_volume"
+    _attr_icon = "mdi:volume-high"
+    _attr_native_min_value = VOLUME_MIN
+    _attr_native_max_value = VOLUME_MAX
+    _attr_native_step = VOLUME_STEP
+    _attr_native_unit_of_measurement = "dB"
+    _attr_mode = NumberMode.SLIDER
+
+    def __init__(self, group: SVSGroup) -> None:
+        """Initialize the entity."""
+        super().__init__(group, "volume")
+        self._group_volume: float | None = None
+        self._loudest_offset = max(group.offsets.values(), default=0)
+
+    async def async_added_to_hass(self) -> None:
+        """Restore the group volume from before a restart."""
+        await super().async_added_to_hass()
+        last = await self.async_get_last_number_data()
+        if last and last.native_value is not None:
+            self._group_volume = last.native_value - self._loudest_offset
+
+    def _member_group_volumes(self) -> list[float]:
+        """Return the group volume each synced member's volume implies."""
+        coordinators = self.group.coordinators(self.group.synced)
+        return [
+            float(coordinator.data["VOLUME"]) - self.group.offsets[address]
+            for address, coordinator in coordinators.items()
+            if coordinator.data.get("VOLUME") is not None
+        ]
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the group volume as the loudest synced member hears it.
+
+        Shown while at least one synced member is still at its target, so
+        changing one member on its own does not change the group. Unknown when
+        none is; with no remembered group volume, the members must agree.
+        """
+        implied = self._member_group_volumes()
+        if self._group_volume is not None:
+            if self._group_volume in implied:
+                return self._group_volume + self._loudest_offset
+            return None
+        if implied and len(set(implied)) == 1:
+            return implied[0] + self._loudest_offset
+        return None
+
+    async def async_set_native_value(self, value: float) -> None:
+        """Set every synced member to its target for this group volume."""
+        group_volume = int(value) - self._loudest_offset
+        targets = {
+            address: group_volume + offset
+            for address, offset in self.group.offsets.items()
+        }
+        if not all(VOLUME_MIN <= target <= VOLUME_MAX for target in targets.values()):
+            # A member would go past its limit: leave everything as it is
+            self.async_write_ha_state()
+            return
+        coordinators = self.group.coordinators(self.group.synced)
+        results = await asyncio.gather(
+            *(
+                coordinators[address].async_send_command("VOLUME", target)
+                for address, target in targets.items()
+                if address in coordinators
+            )
+        )
+        self._group_volume = group_volume
+        self.async_write_ha_state()
+        if not all(results):
+            raise HomeAssistantError("Could not set the volume on every subwoofer")

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 
@@ -14,6 +15,9 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import SVSConfigEntry
 from .const import (
+    GROUP_FEATURE_PRESET,
+    GROUP_FEATURE_STANDBY,
+    GROUP_STATE_MIXED,
     LPF_SLOPES,
     PRESET_MANUAL,
     PRESET_MANUAL_OPTION,
@@ -25,6 +29,7 @@ from .const import (
     STANDBY_MODES,
 )
 from .coordinator import SVSSubwooferCoordinator
+from .group import SVSGroup, SVSGroupEntity, active_preset_name
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -104,6 +109,16 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up SVS select entities."""
+    if isinstance(entry.runtime_data, SVSGroup):
+        group = entry.runtime_data
+        entities: list[SelectEntity] = []
+        if GROUP_FEATURE_PRESET in group.features:
+            entities.append(SVSGroupPresetSelect(group))
+        if GROUP_FEATURE_STANDBY in group.features:
+            entities.append(SVSGroupStandbySelect(group))
+        async_add_entities(entities)
+        return
+
     coordinator = entry.runtime_data
 
     async_add_entities(
@@ -220,3 +235,107 @@ class SVSSelectEntity(CoordinatorEntity[SVSSubwooferCoordinator], SelectEntity):
             raise HomeAssistantError(
                 f"Failed to set {self.entity_description.key} to {option}"
             )
+
+
+class SVSGroupPresetSelect(SVSGroupEntity, SelectEntity):
+    """A group's preset: the presets every member has, matched by name."""
+
+    _attr_translation_key = "group_preset"
+    _attr_icon = "mdi:playlist-music"
+
+    def __init__(self, group: SVSGroup) -> None:
+        """Initialize the entity."""
+        super().__init__(group, "preset")
+
+    @property
+    def options(self) -> list[str]:
+        """Return the shared preset names, plus Manual and Mixed."""
+        return [*self.group.matched_presets(), PRESET_MANUAL_OPTION, GROUP_STATE_MIXED]
+
+    @property
+    def current_option(self) -> str | None:
+        """Return the shared preset, Manual, Mixed, or None if unknown.
+
+        Manual when every member is in Manual, the preset's name when every
+        member has a preset of that name active, and Mixed otherwise.
+        """
+        coordinators = self.group.coordinators().values()
+        names = [active_preset_name(coordinator) for coordinator in coordinators]
+        if not names or None in names:
+            return None
+        if len({name.casefold() for name in names}) > 1:
+            return GROUP_STATE_MIXED
+        if names[0] == PRESET_MANUAL_OPTION:
+            return PRESET_MANUAL_OPTION
+        # Use the spelling shown in the options
+        return next(
+            (
+                option
+                for option in self.group.matched_presets()
+                if option.casefold() == names[0].casefold()
+            ),
+            GROUP_STATE_MIXED,
+        )
+
+    async def async_select_option(self, option: str) -> None:
+        """Load the preset with this name on every member."""
+        if option == GROUP_STATE_MIXED:
+            # Mixed is a state, not something that can be loaded
+            return
+        coordinators = self.group.coordinators()
+        if option == PRESET_MANUAL_OPTION:
+            for coordinator in coordinators.values():
+                coordinator.set_manual()
+            return
+        slots = self.group.matched_presets().get(option)
+        if slots is None:
+            raise HomeAssistantError(f"Not every subwoofer has a preset named {option}")
+        results = await asyncio.gather(
+            *(
+                coordinators[address].async_load_preset(slot)
+                for address, slot in slots.items()
+                if address in coordinators
+            )
+        )
+        if not all(results):
+            raise HomeAssistantError(f"Could not load {option} on every subwoofer")
+
+
+class SVSGroupStandbySelect(SVSGroupEntity, SelectEntity):
+    """A group's standby mode, set on every member."""
+
+    _attr_translation_key = "group_standby_mode"
+    _attr_icon = "mdi:power-standby"
+    _attr_options = [*STANDBY_MODES, GROUP_STATE_MIXED]
+
+    def __init__(self, group: SVSGroup) -> None:
+        """Initialize the entity."""
+        super().__init__(group, "standby_mode")
+        self._names = {value: name for name, value in STANDBY_MODE_MAP.items()}
+
+    @property
+    def current_option(self) -> str | None:
+        """Return the shared standby mode, Mixed, or None if unknown."""
+        values = [
+            coordinator.data.get("STANDBY")
+            for coordinator in self.group.coordinators().values()
+        ]
+        if not values or None in values:
+            return None
+        if len(set(values)) > 1:
+            return GROUP_STATE_MIXED
+        return self._names.get(int(values[0]))
+
+    async def async_select_option(self, option: str) -> None:
+        """Set the standby mode on every member."""
+        if option == GROUP_STATE_MIXED:
+            return
+        value = STANDBY_MODE_MAP[option]
+        results = await asyncio.gather(
+            *(
+                coordinator.async_send_command("STANDBY", value)
+                for coordinator in self.group.coordinators().values()
+            )
+        )
+        if not all(results):
+            raise HomeAssistantError(f"Could not set {option} on every subwoofer")
