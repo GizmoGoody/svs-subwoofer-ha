@@ -298,23 +298,23 @@ async def test_offset_volume(
     second_sub: FakeSubwoofer,
     setup_entry: SetupEntry,
 ) -> None:
-    """Each sub plays at its offset; the slider shows the loudest sub."""
+    """Each sub plays at the group volume plus its offset."""
     await _setup_subs(setup_entry)
     entry = await _setup_group(
-        hass, volume_mode="offset", offsets={ADDRESS: 3, ADDRESS2: 0}
+        hass, volume_mode="offset", offsets={ADDRESS: -2, ADDRESS2: 2}
     )
     volume = _group_entity(hass, entry, "number", "volume")
 
-    await _call(hass, "number", volume, value=-10)
-    assert sub.settings["VOLUME"] == -10
-    assert second_sub.settings["VOLUME"] == -13
-    assert float(_state(hass, volume)) == -10
+    await _call(hass, "number", volume, value=-9)
+    assert sub.settings["VOLUME"] == -11
+    assert second_sub.settings["VOLUME"] == -7
+    assert float(_state(hass, volume)) == -9
 
-    # Sub 2 would go below -60: nothing changes
-    await _call(hass, "number", volume, value=-60)
-    assert sub.settings["VOLUME"] == -10
-    assert second_sub.settings["VOLUME"] == -13
-    assert float(_state(hass, volume)) == -10
+    # Sub 2 would go above 0: nothing changes
+    await _call(hass, "number", volume, value=-1)
+    assert sub.settings["VOLUME"] == -11
+    assert second_sub.settings["VOLUME"] == -7
+    assert float(_state(hass, volume)) == -9
 
 
 async def test_unsynced_sub_keeps_its_volume(
