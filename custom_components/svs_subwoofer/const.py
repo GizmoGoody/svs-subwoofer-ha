@@ -80,10 +80,16 @@ def get_connection_mode(options: Mapping[str, Any]) -> str:
     return CONNECTION_PERIODIC
 
 
-# Read by the Quiet connection: the Serial Number String of the standard
-# Device Information service. It is answered by the Bluetooth stack rather
-# than the SVS control software, so it should not wake the panel LEDs.
-QUIET_KEEP_ALIVE_CHAR_UUID: Final = "00002a25-0000-1000-8000-00805f9b34fb"
+# Read by the Quiet connection, in order of preference: fields of the
+# standard Device Information service, answered by the Bluetooth stack rather
+# than the SVS control software, so reading them does not wake the panel
+# LEDs. The first one the subwoofer offers as readable is used.
+QUIET_KEEP_ALIVE_CHAR_UUIDS: Final = [
+    "00002a25-0000-1000-8000-00805f9b34fb",  # Serial Number String
+    "00002a24-0000-1000-8000-00805f9b34fb",  # Model Number String
+    "00002a26-0000-1000-8000-00805f9b34fb",  # Firmware Revision String
+    "00002a29-0000-1000-8000-00805f9b34fb",  # Manufacturer Name String
+]
 
 # Command rate limiting (seconds)
 COMMAND_DELAY: Final = 0.2

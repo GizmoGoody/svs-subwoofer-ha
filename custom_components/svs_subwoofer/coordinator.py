@@ -26,7 +26,7 @@ from .const import (
     EVENT_SVS_SUBWOOFER,
     PRESET_MANUAL,
     PRESET_PARAMS,
-    QUIET_KEEP_ALIVE_CHAR_UUID,
+    QUIET_KEEP_ALIVE_CHAR_UUIDS,
     SVS_CHAR_UUID,
     TRIGGER_SUBTYPE_DEFAULT,
     TRIGGER_TYPE_CONNECTED,
@@ -132,6 +132,10 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._keep_alive = keep_alive
         self._quiet_keep_alive = quiet_keep_alive
         self._quiet_keep_alive_task: asyncio.Task | None = None
+        # Field read by the Quiet connection, chosen once per connection
+        # (None: the sub offers none, so the settings check is used)
+        self._quiet_char: str | None = None
+        self._quiet_char_client: BleakClient | None = None
         self._idle_timeout = idle_timeout
         self._refresh_interval = refresh_interval
         self._refresh_task: asyncio.Task | None = None
@@ -420,9 +424,23 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             err,
                         )
                     continue
+                if self._quiet_char_client is not self._client:
+                    self._quiet_char_client = self._client
+                    self._quiet_char = self._select_quiet_characteristic()
+                if self._quiet_char is None:
+                    # Nothing quiet to read: check the way Constant does
+                    try:
+                        await self._ensure_live(user_initiated=False)
+                    except UpdateFailed as err:
+                        _LOGGER.debug(
+                            "Quiet connection: check of %s failed: %s",
+                            self.address,
+                            err,
+                        )
+                    continue
                 try:
                     await asyncio.wait_for(
-                        self._client.read_gatt_char(QUIET_KEEP_ALIVE_CHAR_UUID),
+                        self._client.read_gatt_char(self._quiet_char),
                         PROBE_TIMEOUT,
                     )
                 except (BleakError, KeyError, TimeoutError) as err:
@@ -435,6 +453,30 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     self._note_silence()
                     continue
                 _LOGGER.debug("Quiet connection: read from %s succeeded", self.address)
+
+    def _select_quiet_characteristic(self) -> str | None:
+        """Return the first standard field this sub offers as readable."""
+        try:
+            services = self._client.services
+        except BleakError:
+            services = None
+        for uuid in QUIET_KEEP_ALIVE_CHAR_UUIDS:
+            try:
+                char = services.get_characteristic(uuid) if services else None
+            except BleakError:
+                char = None
+            if char is not None and "read" in char.properties:
+                _LOGGER.debug(
+                    "Quiet connection: reading %s from %s", uuid, self.address
+                )
+                return uuid
+        _LOGGER.warning(
+            "Quiet connection: %s offers no standard readable field, so it is "
+            "checked with a settings request instead (as with Constant), which "
+            "lights the panel LEDs",
+            self.address,
+        )
+        return None
 
     async def _keep_alive_loop(self) -> None:
         """Keep the link busy and reconnect if it has silently died."""
