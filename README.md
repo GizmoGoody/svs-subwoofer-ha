@@ -22,7 +22,7 @@ Control your SVS subwoofer directly from Home Assistant via Bluetooth. Full para
 
 ## Prerequisites
 
-- **Home Assistant 2024.4.0** or newer
+- **Home Assistant 2024.12.0** or newer
 - **Home Assistant Bluetooth Integration** must be configured and working
   - Go to **Settings** → **Devices & Services** → **Bluetooth**
   - Ensure your Bluetooth adapter is detected and operational
