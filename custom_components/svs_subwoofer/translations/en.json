@@ -179,8 +179,8 @@
     "connection_mode": {
       "options": {
         "periodic": "Periodic – Connects when a command is sent and disconnects after a period without commands. Select Submit to set the timing.",
-        "constant": "Constant – Stays connected and checks the subwoofer every 30 seconds by asking for its settings. The panel LEDs light briefly at each check.",
-        "quiet": "Quiet – Stays connected and checks the Bluetooth link every 30 seconds without lighting the panel LEDs. The subwoofer itself is checked before each command."
+        "constant": "Constant – Stays connected and asks the subwoofer for its settings every 30 seconds, so a stalled subwoofer or a change made on its rear panel is noticed within 30 seconds. The panel LEDs light briefly at each check.",
+        "quiet": "Quiet – Stays connected and checks only the Bluetooth link every 30 seconds, so the panel LEDs stay dark. A stalled subwoofer or a change made on its rear panel is noticed at the next command instead."
       }
     }
   }
