@@ -250,7 +250,11 @@ class SVSGroupPresetSelect(SVSGroupEntity, SelectEntity):
     @property
     def options(self) -> list[str]:
         """Return the shared preset names, plus Manual and Mixed."""
-        return [*self.svs_group.matched_presets(), PRESET_MANUAL_OPTION, GROUP_STATE_MIXED]
+        return [
+            *self.svs_group.matched_presets(),
+            PRESET_MANUAL_OPTION,
+            GROUP_STATE_MIXED,
+        ]
 
     @property
     def current_option(self) -> str | None:
