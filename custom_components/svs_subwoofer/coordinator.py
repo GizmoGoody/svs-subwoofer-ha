@@ -87,6 +87,10 @@ def preset_store(hass: HomeAssistant, address: str) -> Store[dict[str, Any]]:
 _SERIES_MODEL = re.compile(r"^([A-Za-z]{2})(\d{4})(?!\d)")
 
 
+# Two letters directly followed by four digits, such as "SB3000"
+_SERIES_MODEL = re.compile(r"^([A-Za-z]{2})(\d{4})(?!\d)")
+
+
 class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator for SVS Subwoofer BLE communication."""
 
