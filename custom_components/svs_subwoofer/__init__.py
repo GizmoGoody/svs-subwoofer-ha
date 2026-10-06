@@ -35,8 +35,8 @@ from .const import (
     get_connection_mode,
 )
 from .coordinator import SVSSubwooferCoordinator, preset_store
-from .subwoofer_group import SVSGroup
 from .services import async_setup_services, async_unload_services
+from .subwoofer_group import SVSGroup
 
 _LOGGER = logging.getLogger(__name__)
 
