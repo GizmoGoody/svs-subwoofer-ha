@@ -29,7 +29,7 @@ from .const import (
     STANDBY_MODES,
 )
 from .coordinator import SVSSubwooferCoordinator
-from .group import SVSGroup, SVSGroupEntity, active_preset_name
+from .subwoofer_group import SVSGroup, SVSGroupEntity, active_preset_name
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -250,7 +250,7 @@ class SVSGroupPresetSelect(SVSGroupEntity, SelectEntity):
     @property
     def options(self) -> list[str]:
         """Return the shared preset names, plus Manual and Mixed."""
-        return [*self.group.matched_presets(), PRESET_MANUAL_OPTION, GROUP_STATE_MIXED]
+        return [*self.svs_group.matched_presets(), PRESET_MANUAL_OPTION, GROUP_STATE_MIXED]
 
     @property
     def current_option(self) -> str | None:
@@ -259,7 +259,7 @@ class SVSGroupPresetSelect(SVSGroupEntity, SelectEntity):
         Manual when every member is in Manual, the preset's name when every
         member has a preset of that name active, and Mixed otherwise.
         """
-        coordinators = self.group.coordinators().values()
+        coordinators = self.svs_group.coordinators().values()
         names = [active_preset_name(coordinator) for coordinator in coordinators]
         if not names or None in names:
             return None
@@ -271,7 +271,7 @@ class SVSGroupPresetSelect(SVSGroupEntity, SelectEntity):
         return next(
             (
                 option
-                for option in self.group.matched_presets()
+                for option in self.svs_group.matched_presets()
                 if option.casefold() == names[0].casefold()
             ),
             GROUP_STATE_MIXED,
@@ -282,12 +282,12 @@ class SVSGroupPresetSelect(SVSGroupEntity, SelectEntity):
         if option == GROUP_STATE_MIXED:
             # Mixed is a state, not something that can be loaded
             return
-        coordinators = self.group.coordinators()
+        coordinators = self.svs_group.coordinators()
         if option == PRESET_MANUAL_OPTION:
             for coordinator in coordinators.values():
                 coordinator.set_manual()
             return
-        slots = self.group.matched_presets().get(option)
+        slots = self.svs_group.matched_presets().get(option)
         if slots is None:
             raise HomeAssistantError(f"Not every subwoofer has a preset named {option}")
         results = await asyncio.gather(
@@ -318,7 +318,7 @@ class SVSGroupStandbySelect(SVSGroupEntity, SelectEntity):
         """Return the shared standby mode, Mixed, or None if unknown."""
         values = [
             coordinator.data.get("STANDBY")
-            for coordinator in self.group.coordinators().values()
+            for coordinator in self.svs_group.coordinators().values()
         ]
         if not values or None in values:
             return None
@@ -334,7 +334,7 @@ class SVSGroupStandbySelect(SVSGroupEntity, SelectEntity):
         results = await asyncio.gather(
             *(
                 coordinator.async_send_command("STANDBY", value)
-                for coordinator in self.group.coordinators().values()
+                for coordinator in self.svs_group.coordinators().values()
             )
         )
         if not all(results):

@@ -41,7 +41,7 @@ from .const import (
     VOLUME_STEP,
 )
 from .coordinator import SVSSubwooferCoordinator
-from .group import SVSGroup, SVSGroupEntity
+from .subwoofer_group import SVSGroup, SVSGroupEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -294,9 +294,9 @@ class SVSGroupVolumeNumber(SVSGroupEntity, RestoreNumber):
 
     def _member_group_volumes(self) -> list[float]:
         """Return the group volume each synced member's volume implies."""
-        coordinators = self.group.coordinators(self.group.synced)
+        coordinators = self.svs_group.coordinators(self.svs_group.synced)
         return [
-            float(coordinator.data["VOLUME"]) - self.group.offsets[address]
+            float(coordinator.data["VOLUME"]) - self.svs_group.offsets[address]
             for address, coordinator in coordinators.items()
             if coordinator.data.get("VOLUME") is not None
         ]
@@ -323,13 +323,13 @@ class SVSGroupVolumeNumber(SVSGroupEntity, RestoreNumber):
         group_volume = int(value) - self._loudest_offset
         targets = {
             address: group_volume + offset
-            for address, offset in self.group.offsets.items()
+            for address, offset in self.svs_group.offsets.items()
         }
         if not all(VOLUME_MIN <= target <= VOLUME_MAX for target in targets.values()):
             # A member would go past its limit: leave everything as it is
             self.async_write_ha_state()
             return
-        coordinators = self.group.coordinators(self.group.synced)
+        coordinators = self.svs_group.coordinators(self.svs_group.synced)
         results = await asyncio.gather(
             *(
                 coordinators[address].async_send_command("VOLUME", target)
