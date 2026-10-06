@@ -69,6 +69,8 @@ PRESET_SETTINGS_TIMEOUT = 3.0
 
 # Pause after a preset load before the next command is sent (seconds)
 PRESET_SETTLE_DELAY = 0.5
+# How many times a preset load is sent when the sub does not confirm it
+PRESET_LOAD_ATTEMPTS = 2
 
 # Number of presets on the subwoofer (3 user presets + factory default)
 PRESET_COUNT = 4
@@ -656,27 +658,38 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return False
 
             try:
-                _LOGGER.debug("Loading preset: %s", meta)
                 # Hold off preset evaluation until the new settings are recorded
                 self._loading_preset = True
-                # Clear before writing: the sub answers a load within about
-                # 0.1 s, so its reply must not be missed
-                self._settings_event.clear()
-                await self._client.write_gatt_char(SVS_CHAR_UUID, frame)
-
                 # Track which preset is active and publish immediately; the
                 # sub follows with the preset's actual values.
                 self.data["ACTIVE_PRESET"] = preset_number
                 self._set_manual_settings(None)
                 self.async_set_updated_data(self.data)
-                if await self._async_wait_for_preset_settings():
-                    self._record_preset(preset_number)
-                else:
+
+                # The sub always sends its new settings right after a load, so
+                # no reply means the load did not reach it: send it again
+                loaded = False
+                for attempt in range(1, PRESET_LOAD_ATTEMPTS + 1):
+                    _LOGGER.debug("Loading preset: %s (attempt %s)", meta, attempt)
+                    # Clear before writing: the sub answers a load within
+                    # about 0.1 s, so its reply must not be missed
+                    self._settings_event.clear()
+                    await self._client.write_gatt_char(SVS_CHAR_UUID, frame)
+                    if await self._async_wait_for_preset_push():
+                        loaded = True
+                        break
                     _LOGGER.debug(
-                        "No settings from %s after loading preset %s, not recorded",
+                        "%s did not confirm loading preset %s",
                         self.address,
                         preset_number,
                     )
+
+                if loaded:
+                    self._record_preset(preset_number)
+                else:
+                    # Show what the sub really has, and record nothing: these
+                    # are not the preset's settings
+                    await self._async_read_settings()
                 # Give the sub a moment to finish applying the preset before
                 # the next command reaches it
                 await asyncio.sleep(PRESET_SETTLE_DELAY)
@@ -685,6 +698,11 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.async_set_updated_data(self.data)
                 # Reset idle disconnect timer
                 self._schedule_idle_disconnect()
+                if not loaded:
+                    _LOGGER.warning(
+                        "%s did not load preset %s", self.address, preset_number
+                    )
+                    return False
                 # Fire preset loaded event for device automations
                 subtype = (
                     TRIGGER_SUBTYPE_DEFAULT
@@ -700,23 +718,22 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             finally:
                 self._loading_preset = False
 
-    async def _async_wait_for_preset_settings(self) -> bool:
-        """Wait for the settings the sub sends after loading a preset.
+    async def _async_wait_for_preset_push(self) -> bool:
+        """Wait for the settings the sub sends by itself after loading a preset.
 
-        After a load, the sub pushes the preset's settings by itself, so no
-        request is sent at the moment it is busy switching presets. Only if
-        that push does not arrive is the settings read requested once.
-        Caller must hold _command_lock.
+        No request is sent while the sub is busy switching presets.
         """
         try:
             await asyncio.wait_for(self._settings_event.wait(), PRESET_PUSH_TIMEOUT)
-            return True
         except TimeoutError:
-            pass
-        _LOGGER.debug(
-            "%s did not send its settings after a preset load, requesting them",
-            self.address,
-        )
+            return False
+        return True
+
+    async def _async_read_settings(self) -> bool:
+        """Request the full settings and wait for them.
+
+        Caller must hold _command_lock.
+        """
         frame, meta = svs_encode("MEMREAD", "FULL_SETTINGS")
         self._settings_event.clear()
         try:
