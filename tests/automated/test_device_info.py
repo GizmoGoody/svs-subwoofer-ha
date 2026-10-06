@@ -12,9 +12,10 @@ from .features import has, requires
 
 
 def _device(hass: HomeAssistant) -> dr.DeviceEntry:
-    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, ADDRESS)})
-    assert device
-    return device
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    devices = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
+    assert len(devices) == 1
+    return devices[0]
 
 
 @requires("bluetooth_link")

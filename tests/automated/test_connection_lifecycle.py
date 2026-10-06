@@ -48,7 +48,7 @@ async def test_silent_sub_backs_off(
     ):
         await setup_entry(stay_connected_options())
         sub.silent = True
-        await settle(1.5)
+        await settle(2.0)
     # Without backoff this would reconnect every few tenths of a second
     assert sub.connects <= 3
     coordinator = hass.config_entries.async_entries("svs_subwoofer")[0].runtime_data

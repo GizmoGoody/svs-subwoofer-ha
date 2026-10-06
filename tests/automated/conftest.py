@@ -315,6 +315,8 @@ async def setup_entry(
         return sub.client
 
     with (
+        # The real 0.2 s pause between commands only slows the tests down
+        patch.object(coordinator_module, "COMMAND_DELAY", 0.01),
         patch.object(
             coordinator_module, "establish_connection", fake_establish_connection
         ),
