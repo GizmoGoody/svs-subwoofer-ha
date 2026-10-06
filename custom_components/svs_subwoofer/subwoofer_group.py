@@ -150,7 +150,7 @@ class SVSGroupEntity(Entity):
 
     def __init__(self, group: SVSGroup, key: str) -> None:
         """Initialize the entity."""
-        self.group = group
+        self.svs_group = group
         self._attr_unique_id = f"{GROUP_ID_PREFIX}{group.entry.entry_id}_{key}"
         self._attr_device_info = group.device_info
         self._member_listeners: list[CALLBACK_TYPE] = []
@@ -169,7 +169,7 @@ class SVSGroupEntity(Entity):
     @callback
     def _subscribe_members(self) -> None:
         self._unsubscribe_members()
-        for coordinator in self.group.coordinators().values():
+        for coordinator in self.svs_group.coordinators().values():
             self._member_listeners.append(
                 coordinator.async_add_listener(self._handle_member_update)
             )
@@ -193,5 +193,5 @@ class SVSGroupEntity(Entity):
         """Available while at least one member is set up."""
         return any(
             coordinator.last_update_success
-            for coordinator in self.group.coordinators().values()
+            for coordinator in self.svs_group.coordinators().values()
         )
