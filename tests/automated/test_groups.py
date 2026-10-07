@@ -281,15 +281,37 @@ async def test_matched_volume(
     # One sub changed on its own: the other is still at the group volume
     await _call(hass, "number", entity_id(hass, "number", "volume"), value=-25)
     assert float(_state(hass, volume)) == -30
-    # Both changed on their own: the group volume is no longer in effect
+    # Both changed on their own to different levels: no group volume
     await _call(
-        hass, "number", entity_id(hass, "number", "volume", ADDRESS2), value=-25
+        hass, "number", entity_id(hass, "number", "volume", ADDRESS2), value=-28
     )
     assert _state(hass, volume) == "unknown"
 
     # Setting the group again brings both back
     await _call(hass, "number", volume, value=-20)
     assert sub.settings["VOLUME"] == second_sub.settings["VOLUME"] == -20
+
+
+async def test_volume_follows_a_preset_load(
+    hass: HomeAssistant,
+    sub: FakeSubwoofer,
+    second_sub: FakeSubwoofer,
+    setup_entry: SetupEntry,
+) -> None:
+    """After a preset load, the volume the subs share is the group volume."""
+    await _setup_subs(setup_entry)
+    entry = await _setup_group(hass)
+    volume = _group_entity(hass, entry, "number", "volume")
+    await _call(hass, "number", volume, value=-30)
+
+    # LOW is -20 dB on both subs
+    preset = _group_entity(hass, entry, "select", "preset")
+    await _call(hass, "select", preset, option="LOW")
+    assert float(_state(hass, volume)) == -20
+
+    # It is remembered: one sub changed on its own does not change the group
+    await _call(hass, "number", entity_id(hass, "number", "volume"), value=-25)
+    assert float(_state(hass, volume)) == -20
 
 
 async def test_offset_volume(
