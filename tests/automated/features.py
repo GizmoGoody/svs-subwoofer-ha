@@ -58,6 +58,8 @@ FEATURES: dict[str, Callable[[], bool]] = {
     "quiet_not_ready": lambda: (
         not _source_contains("", "Failed to connect to SVS Subwoofer at")
     ),
+    # Dashboard card and tile features
+    "card": lambda: Path("custom_components/svs_subwoofer/card.py").exists(),
     # Subwoofer groups
     "groups": lambda: _has("const", "ENTRY_TYPE_GROUP"),
     # dev only (connection options)
