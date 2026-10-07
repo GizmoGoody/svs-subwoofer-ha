@@ -1,6 +1,7 @@
 {
   "domain": "svs_subwoofer",
   "name": "SVS Subwoofer",
+  "after_dependencies": ["frontend", "http", "lovelace"],
   "version": "1.7.0",
   "codeowners": [],
   "config_flow": true,

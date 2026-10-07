@@ -12,7 +12,10 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ADDRESS, CONF_NAME, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.typing import ConfigType
 
+from .card import async_register_card, async_remove_card_resource
 from .const import CONF_KEEP_ALIVE, DEFAULT_KEEP_ALIVE, DOMAIN
 from .coordinator import SVSSubwooferCoordinator
 from .services import async_setup_services, async_unload_services
@@ -28,6 +31,14 @@ PLATFORMS: list[Platform] = [
 ]
 
 type SVSConfigEntry = ConfigEntry[SVSSubwooferCoordinator]
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Set up SVS Subwoofer: serve its dashboard card and tile features."""
+    await async_register_card(hass)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: SVSConfigEntry) -> bool:
@@ -102,3 +113,14 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
         _LOGGER.error("Failed to unload SVS Subwoofer entry: %s", err)
         # Continue to try setup anyway to recover
     await async_setup_entry(hass, entry)
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove the card from the dashboard resources with the last subwoofer."""
+    others = [
+        other
+        for other in hass.config_entries.async_entries(DOMAIN)
+        if other.entry_id != entry.entry_id
+    ]
+    if not others:
+        await async_remove_card_resource(hass)
