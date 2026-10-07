@@ -25,8 +25,8 @@ from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
 
-CARD_URL = "/svs_subwoofer/svs-card.js"
-CARD_FILE = Path(__file__).parent / "frontend" / "svs-card.js"
+CARD_URL = "/svs_subwoofer/svs-subwoofer-card.js"
+CARD_FILE = Path(__file__).parent / "frontend" / "svs-subwoofer-card.js"
 LOVELACE = "lovelace"
 
 

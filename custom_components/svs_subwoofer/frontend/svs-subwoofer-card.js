@@ -9,7 +9,7 @@
  * for a subwoofer group controls the group, and a card for one subwoofer
  * controls that subwoofer.
  *
- * custom:svs-card is Home Assistant's tile card, wrapped: the tile card still
+ * custom:svs-subwoofer-card is Home Assistant's tile card, wrapped: the tile card still
  * draws the name, state, actions and features. The SVS card adds a driver in
  * place of the icon (its size follows the volume, and it shakes when the
  * volume or preset changes), a Bluetooth badge when a subwoofer is not
@@ -20,9 +20,9 @@
 
 const VERSION = "1.0.0";
 const DOMAIN = "svs_subwoofer";
-const CARD_TYPE = "svs-card";
-const EDITOR_TYPE = "svs-card-editor";
-const TILE_EDITOR_TYPE = "svs-tile-card-editor";
+const CARD_TYPE = "svs-subwoofer-card";
+const EDITOR_TYPE = "svs-subwoofer-card-editor";
+const TILE_EDITOR_TYPE = "svs-subwoofer-tile-card-editor";
 
 // The entities a feature or the card looks for on a device, by translation key
 // (group entities first)

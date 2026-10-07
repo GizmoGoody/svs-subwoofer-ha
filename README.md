@@ -167,7 +167,7 @@ Edit a dashboard, select **Add card**, and search for **SVS Subwoofer**. The car
 In place of the tile card's icon, the card shows a subwoofer driver. Its size follows the volume, and its ring takes the active preset's color. A Bluetooth badge appears on it while the subwoofer is not connected.
 
 ```yaml
-type: custom:svs-card
+type: custom:svs-subwoofer-card
 entity: number.subwoofer_both_volume
 finish: black_ash        # none, black_ash, black_oak, gloss_black, gloss_white
 pattern: 4242            # the grain or reflection pattern (Randomize sets it)
