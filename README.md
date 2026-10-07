@@ -20,6 +20,7 @@ Control your SVS subwoofer directly from Home Assistant via Bluetooth. Full para
   - Presets (1-4)
   - Standby Mode
 - Device triggers and actions for automations
+- Dashboard card and tile features (preset buttons, volume slider, standby), with optional SVS cabinet finishes; included, with nothing else to install
 
 ## Prerequisites
 
@@ -138,6 +139,52 @@ To get the most from this, load each preset from Home Assistant once. Standby mo
 | Entity | Description |
 |--------|-------------|
 | Connected | On only while the subwoofer is connected and answering; a connection the subwoofer does not answer shows as off |
+
+## Dashboard Card
+
+The integration includes a dashboard card and three tile features, so there is nothing else to install.
+
+### Tile features
+
+These add controls to any tile card whose entity belongs to an SVS subwoofer or subwoofer group. Edit a tile card, open **Features**, and add them. Each one finds its entity on the same device, so on a subwoofer group it controls the group.
+
+| Feature | What it does |
+|---------|--------------|
+| **SVS presets** | One button per preset, lit in that preset's color while it is active. Selecting a button always loads that preset, even the one that is already shown. Choose which presets appear, and each preset's color and icon. Presets named LOW, MEDIUM, and HIGH start as green, yellow, and red, with volume icons. |
+| **SVS volume** | A volume slider. Turn on **Color by volume** to split it into three ranges, each with its own color: the track shows the ranges faintly, and the filled part takes the color of the range it ends in. If the two volumes are entered the other way round, the editor swaps them back into order and moves the quietest and loudest colors with them. |
+| **SVS standby mode** | The standby mode as a row of buttons. |
+
+All three take their height, corners, and colors from your theme.
+
+### SVS Subwoofer card
+
+Edit a dashboard, select **Add card**, and search for **SVS Subwoofer**. The card is Home Assistant's tile card: every tile card option works the same way and appears in the same editor. Choose the subwoofer's or group's **Volume** entity, so the card's state shows the volume. Below the tile card's options, the **SVS style** panel adds:
+
+- **Finish**: None (your theme's own card), Premium Black Ash, Black Oak Real Wood Veneer, Piano Gloss Black, or Piano Gloss White. On a finish, every SVS feature control sits on a solid backing, so the finish shows around the controls but never through them.
+- **Randomize grain** (the wood finishes) draws a new board, running vertically or horizontally at a new grain size. **Randomize reflections** (the gloss finishes) moves the reflections.
+- **Shake when the volume or preset changes**: the driver shakes while the volume slider moves and briefly when a preset loads, harder at a higher volume. It stays still for anyone who has reduced motion turned on.
+
+In place of the tile card's icon, the card shows a subwoofer driver. Its size follows the volume, and its ring takes the active preset's color. A Bluetooth badge appears on it while the subwoofer is not connected.
+
+```yaml
+type: custom:svs-card
+entity: number.subwoofer_both_volume
+finish: black_ash        # none, black_ash, black_oak, gloss_black, gloss_white
+pattern: 4242            # the grain or reflection pattern (Randomize sets it)
+vibration: true
+features:
+  - type: custom:svs-preset-buttons
+  - type: custom:svs-volume
+    color_ranges:
+      - below: -30
+        color: green
+      - below: -15
+        color: yellow
+      - color: red
+features_position: bottom
+```
+
+If a dashboard was already open when Home Assistant started or the integration was updated, reload the page if it shows "Custom element does not exist".
 
 ## Dashboard Examples
 
