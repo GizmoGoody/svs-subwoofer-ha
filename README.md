@@ -309,7 +309,7 @@ Changing one subwoofer on its own never changes the group or the other subwoofer
 - **Matched**: every synced subwoofer plays at the group volume.
 - **Offset**: each synced subwoofer plays at the group volume plus its own offset (-20 to +20 dB). The group slider shows the group volume itself: with offsets of -2 and +2 dB and the slider at -9 dB, the subwoofers play at -11 and -7 dB. A change that would push any subwoofer past -60 or 0 dB is not applied.
 
-Subwoofers that are not synced keep their own volume. If a synced subwoofer is changed on its own, the group volume stays as it was while at least one synced subwoofer is still at its group level; once none is, the group volume shows as unknown until it is set again, which restores every synced subwoofer to its level.
+Subwoofers that are not synced keep their own volume. When every synced subwoofer is at its level for the same group volume, for example after a preset load, the group shows that volume. If a synced subwoofer is changed on its own, the group volume stays as it was while at least one synced subwoofer is still at its group level; once none is, the group volume shows as unknown until it is set again, which restores every synced subwoofer to its level.
 
 ## Multi-Subwoofer Control
 

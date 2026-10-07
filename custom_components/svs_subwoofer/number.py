@@ -13,7 +13,7 @@ from homeassistant.components.number import (
     RestoreNumber,
 )
 from homeassistant.const import EntityCategory
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -299,21 +299,36 @@ class SVSGroupVolumeNumber(SVSGroupEntity, RestoreNumber):
             if coordinator.data.get("VOLUME") is not None
         ]
 
+    def _agreed_group_volume(self) -> float | None:
+        """Return the group volume every synced member implies, if they agree."""
+        implied = self._member_group_volumes()
+        if implied and len(set(implied)) == 1:
+            return implied[0]
+        return None
+
+    @callback
+    def _handle_member_update(self) -> None:
+        # When the members agree, for example after a preset load, that is
+        # the group volume from now on
+        agreed = self._agreed_group_volume()
+        if agreed is not None:
+            self._group_volume = agreed
+        super()._handle_member_update()
+
     @property
     def native_value(self) -> float | None:
         """Return the group volume.
 
-        Shown while at least one synced member is still at its target, so
-        changing one member on its own does not change the group. Unknown when
-        none is; with no remembered group volume, the members must agree.
+        When every synced member is at its level for one group volume, that
+        is the group volume. Otherwise the remembered group volume is shown
+        while at least one synced member is still at its level, so changing
+        one member on its own does not change the group. Unknown when none is.
         """
-        implied = self._member_group_volumes()
-        if self._group_volume is not None:
-            if self._group_volume in implied:
-                return self._group_volume
-            return None
-        if implied and len(set(implied)) == 1:
-            return implied[0]
+        agreed = self._agreed_group_volume()
+        if agreed is not None:
+            return agreed
+        if self._group_volume in self._member_group_volumes():
+            return self._group_volume
         return None
 
     async def async_set_native_value(self, value: float) -> None:
