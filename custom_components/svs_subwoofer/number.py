@@ -208,8 +208,7 @@ async def async_setup_entry(
     """Set up SVS number entities."""
     if isinstance(entry.runtime_data, SVSGroup):
         group = entry.runtime_data
-        # The group volume only makes sense with at least two synced subs
-        if GROUP_FEATURE_VOLUME in group.features and len(group.synced) >= 2:
+        if GROUP_FEATURE_VOLUME in group.features:
             async_add_entities([SVSGroupVolumeNumber(group)])
         return
 
@@ -263,12 +262,12 @@ class SVSNumberEntity(CoordinatorEntity[SVSSubwooferCoordinator], NumberEntity):
 
 
 class SVSGroupVolumeNumber(SVSGroupEntity, RestoreNumber):
-    """A group's volume, applied to every synced member.
+    """A group's volume, applied to every member.
 
-    The group volume G is remembered and shown. In Matched mode every synced
-    member is set to G. In Offset mode each synced member is set to G plus its
-    own offset. Offsets apply to changes made with the group volume; when a
-    preset puts every synced member at the same volume, that volume is G.
+    The group volume G is remembered and shown. In Matched mode every member
+    is set to G. In Offset mode each member is set to G plus its own offset.
+    Offsets apply to changes made with the group volume; when a preset puts
+    every member at the same volume, that volume is G.
     Every change sends each member its absolute target, which restores the
     offsets after a member was changed on its own.
     """
@@ -285,7 +284,7 @@ class SVSGroupVolumeNumber(SVSGroupEntity, RestoreNumber):
         """Initialize the entity."""
         super().__init__(group, "volume")
         self._group_volume: float | None = None
-        # The volume each synced member has at the group volume
+        # The volume each member has at the group volume
         self._expected: dict[str, float] = {}
 
     async def async_added_to_hass(self) -> None:
@@ -301,8 +300,8 @@ class SVSGroupVolumeNumber(SVSGroupEntity, RestoreNumber):
         self._adopt_agreed_volume()
 
     def _member_volumes(self) -> dict[str, float]:
-        """Return the volume of each synced member that has reported it."""
-        coordinators = self.svs_group.coordinators(self.svs_group.synced)
+        """Return the volume of each member that has reported it."""
+        coordinators = self.svs_group.coordinators()
         return {
             address: float(coordinator.data["VOLUME"])
             for address, coordinator in coordinators.items()
@@ -310,8 +309,8 @@ class SVSGroupVolumeNumber(SVSGroupEntity, RestoreNumber):
         }
 
     def _same_preset_active(self) -> bool:
-        """Return True if every synced member has the same preset active."""
-        coordinators = self.svs_group.coordinators(self.svs_group.synced)
+        """Return True if every member has the same preset active."""
+        coordinators = self.svs_group.coordinators()
         names = {active_preset_name(c) for c in coordinators.values()}
         return len(names) == 1 and not names & {None, PRESET_MANUAL_OPTION}
 
@@ -352,8 +351,8 @@ class SVSGroupVolumeNumber(SVSGroupEntity, RestoreNumber):
         """Return the group volume.
 
         When the members agree, that is the group volume. Otherwise the
-        remembered group volume is shown while at least one synced member is
-        still at its volume for it, so changing one member on its own does not
+        remembered group volume is shown while at least one member is still
+        at its volume for it, so changing one member on its own does not
         change the group. Unknown when none is.
         """
         agreed = self._agreed_volume()
@@ -367,7 +366,7 @@ class SVSGroupVolumeNumber(SVSGroupEntity, RestoreNumber):
         return None
 
     async def async_set_native_value(self, value: float) -> None:
-        """Set every synced member to its target for this group volume."""
+        """Set every member to its target for this group volume."""
         group_volume = int(value)
         targets = {
             address: group_volume + offset
@@ -377,7 +376,7 @@ class SVSGroupVolumeNumber(SVSGroupEntity, RestoreNumber):
             # A member would go past its limit: leave everything as it is
             self.async_write_ha_state()
             return
-        coordinators = self.svs_group.coordinators(self.svs_group.synced)
+        coordinators = self.svs_group.coordinators()
         results = await asyncio.gather(
             *(
                 coordinators[address].async_send_command("VOLUME", target)

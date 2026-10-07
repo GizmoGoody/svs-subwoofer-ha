@@ -37,7 +37,6 @@ from .const import (
     CONF_MEMBERS,
     CONF_OFFSETS,
     CONF_RECONNECT_INTERVAL,
-    CONF_SYNCED_MEMBERS,
     CONF_VOLUME_MODE,
     CONNECTION_MODES,
     CONNECTION_PERIODIC,
@@ -134,23 +133,13 @@ class GroupStepsMixin:
     async def async_step_group_volume(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Choose the volume mode and which subwoofers follow the group volume."""
-        labels = self._member_labels()
-        members = self._group[CONF_MEMBERS]
+        """Choose how the group volume moves the subwoofers."""
         if user_input is not None:
             self._group[CONF_VOLUME_MODE] = user_input[CONF_VOLUME_MODE]
-            self._group[CONF_SYNCED_MEMBERS] = [
-                a for a in members if a in user_input.get(CONF_SYNCED_MEMBERS, [])
-            ]
-            if self._group[CONF_VOLUME_MODE] == VOLUME_MODE_OFFSET and len(
-                self._group[CONF_SYNCED_MEMBERS]
-            ):
+            if self._group[CONF_VOLUME_MODE] == VOLUME_MODE_OFFSET:
                 return await self.async_step_group_offsets()
             return await self._async_finish_group()
 
-        synced = [
-            a for a in self._group.get(CONF_SYNCED_MEMBERS, members) if a in members
-        ]
         return self.async_show_form(  # type: ignore[attr-defined]
             step_id="group_volume",
             data_schema=vol.Schema(
@@ -165,17 +154,6 @@ class GroupStepsMixin:
                             mode=SelectSelectorMode.LIST,
                         )
                     ),
-                    vol.Optional(CONF_SYNCED_MEMBERS, default=synced): SelectSelector(
-                        SelectSelectorConfig(
-                            options=[
-                                SelectOptionDict(value=a, label=label)
-                                for a, label in labels.items()
-                                if a in members
-                            ],
-                            multiple=True,
-                            mode=SelectSelectorMode.LIST,
-                        )
-                    ),
                 }
             ),
         )
@@ -183,11 +161,11 @@ class GroupStepsMixin:
     async def async_step_group_offsets(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Set each synced subwoofer's offset from the group volume."""
+        """Set each subwoofer's offset from the group volume."""
         labels = self._member_labels()
-        synced = self._group[CONF_SYNCED_MEMBERS]
+        members = self._group[CONF_MEMBERS]
         # The fields are named after the subwoofers, so the dialog shows them
-        fields = {label: a for a, label in labels.items() if a in synced}
+        fields = {label: a for a, label in labels.items() if a in members}
         if user_input is not None:
             self._group[CONF_OFFSETS] = {
                 address: int(user_input.get(field, 0))
@@ -222,9 +200,6 @@ class GroupStepsMixin:
             CONF_MEMBERS: self._group[CONF_MEMBERS],
             CONF_GROUP_FEATURES: self._group[CONF_GROUP_FEATURES],
             CONF_VOLUME_MODE: self._group.get(CONF_VOLUME_MODE, VOLUME_MODE_MATCHED),
-            CONF_SYNCED_MEMBERS: self._group.get(
-                CONF_SYNCED_MEMBERS, self._group[CONF_MEMBERS]
-            ),
             CONF_OFFSETS: self._group.get(CONF_OFFSETS, {}),
         }
 

@@ -47,18 +47,14 @@
       },
       "group_volume": {
         "title": "Group Volume",
-        "description": "Choose how the group volume moves the subwoofers you sync with it.",
+        "description": "Choose how the group volume moves the subwoofers.",
         "data": {
-          "volume_mode": "Volume mode",
-          "synced_members": "Sync volume"
-        },
-        "data_description": {
-          "synced_members": "Subwoofers you do not sync keep their own volume. The group volume control appears once at least two subwoofers are synced."
+          "volume_mode": "Volume mode"
         }
       },
       "group_offsets": {
         "title": "Volume Offsets",
-        "description": "Each synced subwoofer plays at the group volume plus its offset. The group volume control shows the group volume itself."
+        "description": "Each subwoofer plays at the group volume plus its offset."
       }
     },
     "error": {
@@ -106,18 +102,14 @@
       },
       "group_volume": {
         "title": "Group Volume",
-        "description": "Choose how the group volume moves the subwoofers you sync with it.",
+        "description": "Choose how the group volume moves the subwoofers.",
         "data": {
-          "volume_mode": "Volume mode",
-          "synced_members": "Sync volume"
-        },
-        "data_description": {
-          "synced_members": "Subwoofers you do not sync keep their own volume. The group volume control appears once at least two subwoofers are synced."
+          "volume_mode": "Volume mode"
         }
       },
       "group_offsets": {
         "title": "Volume Offsets",
-        "description": "Each synced subwoofer plays at the group volume plus its offset. The group volume control shows the group volume itself."
+        "description": "Each subwoofer plays at the group volume plus its offset."
       }
     },
     "error": {
@@ -268,8 +260,8 @@
     },
     "volume_mode": {
       "options": {
-        "matched": "Matched – Every synced subwoofer plays at the group volume.",
-        "offset": "Offset – Each synced subwoofer plays at the group volume plus its own offset."
+        "matched": "Matched – Every subwoofer plays at the group volume.",
+        "offset": "Offset – Each subwoofer plays at the group volume plus its own offset."
       }
     }
   }

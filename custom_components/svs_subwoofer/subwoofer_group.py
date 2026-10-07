@@ -20,7 +20,6 @@ from .const import (
     CONF_GROUP_FEATURES,
     CONF_MEMBERS,
     CONF_OFFSETS,
-    CONF_SYNCED_MEMBERS,
     CONF_VOLUME_MODE,
     DOMAIN,
     GROUP_FEATURES,
@@ -70,11 +69,6 @@ class SVSGroup:
         self.members: list[str] = list(options.get(CONF_MEMBERS, []))
         self.features: set[str] = set(options.get(CONF_GROUP_FEATURES, GROUP_FEATURES))
         self.volume_mode: str = options.get(CONF_VOLUME_MODE, VOLUME_MODE_MATCHED)
-        self.synced: list[str] = [
-            address
-            for address in options.get(CONF_SYNCED_MEMBERS, self.members)
-            if address in self.members
-        ]
         offsets = options.get(CONF_OFFSETS, {})
         self.offsets: dict[str, int] = {
             address: (
@@ -82,7 +76,7 @@ class SVSGroup:
                 if self.volume_mode == VOLUME_MODE_OFFSET
                 else 0
             )
-            for address in self.synced
+            for address in self.members
         }
 
     @property

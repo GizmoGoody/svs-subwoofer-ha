@@ -109,7 +109,6 @@ CONF_VOLUME_MODE: Final = "volume_mode"
 VOLUME_MODE_MATCHED: Final = "matched"
 VOLUME_MODE_OFFSET: Final = "offset"
 VOLUME_MODES: Final = [VOLUME_MODE_MATCHED, VOLUME_MODE_OFFSET]
-CONF_SYNCED_MEMBERS: Final = "synced_members"
 CONF_OFFSETS: Final = "offsets"  # member address -> offset in dB
 OFFSET_MIN: Final = -20
 OFFSET_MAX: Final = 20
