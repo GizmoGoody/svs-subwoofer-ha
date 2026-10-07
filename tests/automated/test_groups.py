@@ -45,7 +45,6 @@ async def _setup_group(hass: HomeAssistant, **options: Any) -> MockConfigEntry:
             "members": [ADDRESS, ADDRESS2],
             "features": ALL_FEATURES,
             "volume_mode": "matched",
-            "synced_members": [ADDRESS, ADDRESS2],
             "offsets": {},
         }
         | options,
@@ -134,7 +133,7 @@ async def test_create_group_needs_two_members(
 async def test_create_group_with_offsets(
     hass: HomeAssistant, second_sub: FakeSubwoofer, setup_entry: SetupEntry
 ) -> None:
-    """Offset mode asks for each synced subwoofer's offset, by name."""
+    """Offset mode asks for each subwoofer's offset, by name."""
     await _setup_subs(setup_entry)
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
@@ -149,7 +148,7 @@ async def test_create_group_with_offsets(
     assert result["step_id"] == "group_volume"
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        {"volume_mode": "offset", "synced_members": [ADDRESS, ADDRESS2]},
+        {"volume_mode": "offset"},
     )
     assert result["step_id"] == "group_offsets"
     result = await hass.config_entries.flow.async_configure(
@@ -266,7 +265,7 @@ async def test_matched_volume(
     second_sub: FakeSubwoofer,
     setup_entry: SetupEntry,
 ) -> None:
-    """Every synced sub follows the group volume until all were changed alone."""
+    """Every sub follows the group volume until all were changed alone."""
     await _setup_subs(setup_entry)
     entry = await _setup_group(hass)
     volume = _group_entity(hass, entry, "number", "volume")
@@ -366,18 +365,6 @@ async def test_offset_volume_follows_a_preset_load(
     # Making them alike by hand is not a preset: the group volume stays
     await _call(hass, "number", entity_id(hass, "number", "volume"), value=-16)
     assert float(_state(hass, volume)) == -18
-
-
-async def test_unsynced_sub_keeps_its_volume(
-    hass: HomeAssistant,
-    sub: FakeSubwoofer,
-    second_sub: FakeSubwoofer,
-    setup_entry: SetupEntry,
-) -> None:
-    """With fewer than two synced subs, the group has no volume control."""
-    await _setup_subs(setup_entry)
-    entry = await _setup_group(hass, synced_members=[ADDRESS])
-    assert _group_entity(hass, entry, "number", "volume") is None
 
 
 # Device automations
