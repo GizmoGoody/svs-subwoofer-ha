@@ -150,7 +150,7 @@ These add controls to any tile card whose entity belongs to an SVS subwoofer or 
 
 | Feature | What it does |
 |---------|--------------|
-| **SVS Subwoofer presets** | One button per preset, lit in that preset's color while it is active. Selecting a button always loads that preset, even the one that is already shown. Choose which presets appear and in what order, and each preset's color and icon. Presets named LOW, MEDIUM, and HIGH start in that order, as green, yellow, and red, with volume icons. |
+| **SVS Subwoofer presets** | One button per preset, lit in that preset's color while it is active. Selecting a button always loads that preset, even the one that is already shown. Presets appear in the subwoofer's slot order until you reorder them; you can also choose which appear, and each preset's color and icon. Presets named LOW, MEDIUM, and HIGH start as green, yellow, and red, with volume icons. |
 | **SVS Subwoofer volume** | A volume slider. Turn on **Volume thresholds** to split it into three ranges, each with its own color: the track shows the ranges faintly, and the filled part takes the color of the range it ends in. If the two volumes are entered the other way round, the editor swaps them back into order and moves the quietest and loudest colors with them. |
 | **SVS Subwoofer standby mode** | The standby mode as a row of buttons. |
 

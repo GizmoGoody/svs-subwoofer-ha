@@ -46,14 +46,6 @@ const LIGHT_COLORS = ["yellow", "amber", "lime", "light-green", "white", "light-
 const cssColor = (color) => (HA_COLORS.includes(color) ? `var(--${color}-color)` : color);
 const isLight = (color) => LIGHT_COLORS.includes(color) || /^#(f|e)/i.test(color || "");
 
-// The usual preset names in order from quiet to loud; other presets follow
-// in the subwoofer's own order
-const presetRank = (name) => {
-  const n = name.toLowerCase();
-  return n.includes("low") ? 0 : n.includes("med") ? 1 : n.includes("high") ? 2 : 3;
-};
-const byLoudness = (names) => names.map((n, i) => [n, i]).sort((a, b) => presetRank(a[0]) - presetRank(b[0]) || a[1] - b[1]).map(([n]) => n);
-
 // Defaults for the usual preset names; anything else uses the theme's feature color
 function presetDefaults(name) {
   const n = name.toLowerCase();
@@ -187,7 +179,8 @@ class SvsPresetButtons extends HTMLElement {
     if (!this._hass || !this._config || !this._context) return;
     const entity = this._entity;
     const stateObj = entity ? this._hass.states[entity] : undefined;
-    const names = byLoudness((stateObj?.attributes.options ?? []).filter((n) => !NOT_PRESETS.includes(n)));
+    // The subwoofer's own preset order (its slots) until the user reorders them
+    const names = (stateObj?.attributes.options ?? []).filter((n) => !NOT_PRESETS.includes(n));
     const show = Array.isArray(this._config.presets_shown) ? this._config.presets_shown : null;
     const shown = show ? show.filter((n) => names.includes(n)) : names;
     const key = JSON.stringify([shown, stateObj?.state, this._config.presets, unavailable(stateObj)]);
@@ -257,7 +250,7 @@ class SvsPresetButtonsEditor extends HTMLElement {
           if (color || icon) presets[name] = { ...(color ? { color } : {}), ...(icon ? { icon } : {}) };
         }
         const config = { type: this._config.type, presets };
-        // Kept only when it differs from the default (every preset, quiet to loud)
+        // Kept only when it differs from the default (every preset, in slot order)
         if (Array.isArray(value.presets_shown) && JSON.stringify(value.presets_shown) !== JSON.stringify(this._names())) {
           config.presets_shown = value.presets_shown;
         }
@@ -292,7 +285,7 @@ class SvsPresetButtonsEditor extends HTMLElement {
   _names() {
     const entity = sibling(this._hass, this._context?.entity_id, "preset");
     const options = entity ? this._hass.states[entity]?.attributes.options ?? [] : [];
-    return byLoudness(options.filter((n) => !NOT_PRESETS.includes(n)));
+    return options.filter((n) => !NOT_PRESETS.includes(n));
   }
 }
 
