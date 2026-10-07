@@ -361,8 +361,7 @@ class SVSGroupVolumeNumber(SVSGroupEntity, RestoreNumber):
             return agreed[0]
         volumes = self._member_volumes()
         if any(
-            self._expected.get(address) == volume
-            for address, volume in volumes.items()
+            self._expected.get(address) == volume for address, volume in volumes.items()
         ):
             return self._group_volume
         return None
