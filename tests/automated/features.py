@@ -55,8 +55,8 @@ FEATURES: dict[str, Callable[[], bool]] = {
     ),
     "model_name": lambda: _has("coordinator", "_SERIES_MODEL"),
     # Not ready at startup is not logged as an error
-    "quiet_not_ready": lambda: not _source_contains(
-        "", "Failed to connect to SVS Subwoofer at"
+    "quiet_not_ready": lambda: (
+        not _source_contains("", "Failed to connect to SVS Subwoofer at")
     ),
     # Subwoofer groups
     "groups": lambda: _has("const", "ENTRY_TYPE_GROUP"),
