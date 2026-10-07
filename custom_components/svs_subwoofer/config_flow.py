@@ -82,17 +82,18 @@ class GroupStepsMixin:
     _group: dict[str, Any]
 
     def _member_labels(self) -> dict[str, str]:
-        """Return the subwoofers that can be members: address -> name."""
+        """Return the subwoofers that can be members, address -> name, by name."""
         labels: dict[str, str] = {}
         for entry in _subwoofer_entries(self.hass):
             address = entry.data[CONF_ADDRESS]
             labels[address] = entry.title
         # Two subwoofers with the same name are told apart by address
         names = list(labels.values())
-        return {
+        labels = {
             address: name if names.count(name) == 1 else f"{name} ({address})"
             for address, name in labels.items()
         }
+        return dict(sorted(labels.items(), key=lambda item: item[1].casefold()))
 
     def _members_schema(self, extra: dict[Any, Any]) -> vol.Schema:
         labels = self._member_labels()
@@ -167,8 +168,9 @@ class GroupStepsMixin:
                     vol.Optional(CONF_SYNCED_MEMBERS, default=synced): SelectSelector(
                         SelectSelectorConfig(
                             options=[
-                                SelectOptionDict(value=a, label=labels.get(a, a))
-                                for a in members
+                                SelectOptionDict(value=a, label=label)
+                                for a, label in labels.items()
+                                if a in members
                             ],
                             multiple=True,
                             mode=SelectSelectorMode.LIST,
@@ -185,7 +187,7 @@ class GroupStepsMixin:
         labels = self._member_labels()
         synced = self._group[CONF_SYNCED_MEMBERS]
         # The fields are named after the subwoofers, so the dialog shows them
-        fields = {labels.get(address, address): address for address in synced}
+        fields = {label: a for a, label in labels.items() if a in synced}
         if user_input is not None:
             self._group[CONF_OFFSETS] = {
                 address: int(user_input.get(field, 0))
