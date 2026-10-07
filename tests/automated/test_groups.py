@@ -339,6 +339,35 @@ async def test_offset_volume(
     assert float(_state(hass, volume)) == -9
 
 
+async def test_offset_volume_follows_a_preset_load(
+    hass: HomeAssistant,
+    sub: FakeSubwoofer,
+    second_sub: FakeSubwoofer,
+    setup_entry: SetupEntry,
+) -> None:
+    """A preset that sets both subs alike sets the group volume; offsets wait."""
+    await _setup_subs(setup_entry)
+    entry = await _setup_group(
+        hass, volume_mode="offset", offsets={ADDRESS: -2, ADDRESS2: 2}
+    )
+    volume = _group_entity(hass, entry, "number", "volume")
+    await _call(hass, "number", volume, value=-9)
+
+    # LOW is -20 dB on both subs
+    preset = _group_entity(hass, entry, "select", "preset")
+    await _call(hass, "select", preset, option="LOW")
+    assert float(_state(hass, volume)) == -20
+
+    # The next group change applies the offsets again
+    await _call(hass, "number", volume, value=-18)
+    assert sub.settings["VOLUME"] == -20
+    assert second_sub.settings["VOLUME"] == -16
+
+    # Making them alike by hand is not a preset: the group volume stays
+    await _call(hass, "number", entity_id(hass, "number", "volume"), value=-16)
+    assert float(_state(hass, volume)) == -18
+
+
 async def test_unsynced_sub_keeps_its_volume(
     hass: HomeAssistant,
     sub: FakeSubwoofer,
