@@ -2,9 +2,9 @@
  * SVS Subwoofer dashboard card and tile features.
  *
  * Tile features (they work in any tile card, and in the SVS card):
- * - custom:svs-preset-buttons  one button per preset, each in its own color
- * - custom:svs-volume          a volume slider, optionally colored by range
- * - custom:svs-standby         the standby mode as a segmented control
+ * - custom:svs-subwoofer-presets  one button per preset, each in its own color
+ * - custom:svs-subwoofer-volume   a volume slider, optionally colored by volume thresholds
+ * - custom:svs-subwoofer-standby  the standby mode as a segmented control
  * Each finds its entity on the same device as the card's entity, so a card
  * for a subwoofer group controls the group, and a card for one subwoofer
  * controls that subwoofer.
@@ -46,6 +46,14 @@ const LIGHT_COLORS = ["yellow", "amber", "lime", "light-green", "white", "light-
 const cssColor = (color) => (HA_COLORS.includes(color) ? `var(--${color}-color)` : color);
 const isLight = (color) => LIGHT_COLORS.includes(color) || /^#(f|e)/i.test(color || "");
 
+// The usual preset names in order from quiet to loud; other presets follow
+// in the subwoofer's own order
+const presetRank = (name) => {
+  const n = name.toLowerCase();
+  return n.includes("low") ? 0 : n.includes("med") ? 1 : n.includes("high") ? 2 : 3;
+};
+const byLoudness = (names) => names.map((n, i) => [n, i]).sort((a, b) => presetRank(a[0]) - presetRank(b[0]) || a[1] - b[1]).map(([n]) => n);
+
 // Defaults for the usual preset names; anything else uses the theme's feature color
 function presetDefaults(name) {
   const n = name.toLowerCase();
@@ -70,6 +78,33 @@ function sibling(hass, entityId, role) {
 }
 
 const isSvs = (hass, entityId) => hass?.entities?.[entityId]?.platform === DOMAIN;
+
+/**
+ * The subwoofer's preset, standby mode and volume, for the tile card's state
+ * content. They are added as attributes of the card's entity (only for the
+ * tile card inside this card), so "State content" can show them next to the
+ * entity's own state. The card's own entity is left out.
+ */
+function subwooferAttributes(hass, entityId) {
+  const extra = {};
+  for (const [role, attribute] of [["preset", "preset"], ["standby", "standby_mode"], ["volume", "volume"]]) {
+    const id = sibling(hass, entityId, role);
+    const stateObj = id && id !== entityId ? hass.states[id] : undefined;
+    if (!stateObj || unavailable(stateObj) || stateObj.state === "unknown") continue;
+    const unit = stateObj.attributes.unit_of_measurement;
+    extra[attribute] = unit ? `${stateObj.state} ${unit}` : stateObj.state;
+  }
+  return extra;
+}
+
+/** hass with the card's entity carrying the subwoofer attributes (and a picture). */
+function withSubwooferAttributes(hass, entityId, picture) {
+  const stateObj = hass?.states[entityId];
+  if (!stateObj) return hass;
+  const attributes = { ...stateObj.attributes, ...subwooferAttributes(hass, entityId) };
+  if (picture) attributes.entity_picture = picture;
+  return { ...hass, states: { ...hass.states, [entityId]: { ...stateObj, attributes } } };
+}
 const unavailable = (stateObj) => !stateObj || stateObj.state === "unavailable";
 
 const fire = (el, type, detail) =>
@@ -121,11 +156,11 @@ class SvsPresetButtons extends HTMLElement {
   }
 
   static getStubConfig() {
-    return { type: "custom:svs-preset-buttons" };
+    return { type: "custom:svs-subwoofer-presets" };
   }
 
   static getConfigElement() {
-    return document.createElement("svs-preset-buttons-editor");
+    return document.createElement("svs-subwoofer-presets-editor");
   }
 
   setConfig(config) {
@@ -152,7 +187,7 @@ class SvsPresetButtons extends HTMLElement {
     if (!this._hass || !this._config || !this._context) return;
     const entity = this._entity;
     const stateObj = entity ? this._hass.states[entity] : undefined;
-    const names = (stateObj?.attributes.options ?? []).filter((n) => !NOT_PRESETS.includes(n));
+    const names = byLoudness((stateObj?.attributes.options ?? []).filter((n) => !NOT_PRESETS.includes(n)));
     const show = Array.isArray(this._config.presets_shown) ? this._config.presets_shown : null;
     const shown = show ? show.filter((n) => names.includes(n)) : names;
     const key = JSON.stringify([shown, stateObj?.state, this._config.presets, unavailable(stateObj)]);
@@ -222,7 +257,8 @@ class SvsPresetButtonsEditor extends HTMLElement {
           if (color || icon) presets[name] = { ...(color ? { color } : {}), ...(icon ? { icon } : {}) };
         }
         const config = { type: this._config.type, presets };
-        if (Array.isArray(value.presets_shown) && value.presets_shown.length !== this._names().length) {
+        // Kept only when it differs from the default (every preset, quiet to loud)
+        if (Array.isArray(value.presets_shown) && JSON.stringify(value.presets_shown) !== JSON.stringify(this._names())) {
           config.presets_shown = value.presets_shown;
         }
         this._config = config;
@@ -233,7 +269,10 @@ class SvsPresetButtonsEditor extends HTMLElement {
     const names = this._names();
     this._form.hass = this._hass;
     this._form.schema = [
-      { name: "presets_shown", label: "Presets shown", selector: { select: { multiple: true, mode: "list", options: names } } },
+      {
+        name: "presets_shown", label: "Presets shown, in order",
+        selector: { select: { multiple: true, reorder: true, mode: "dropdown", options: names } },
+      },
       ...names.map((name) => ({
         type: "grid", name: "", schema: [
           { name: `color_${name}`, label: `${name} color`, selector: { ui_color: {} } },
@@ -253,17 +292,17 @@ class SvsPresetButtonsEditor extends HTMLElement {
   _names() {
     const entity = sibling(this._hass, this._context?.entity_id, "preset");
     const options = entity ? this._hass.states[entity]?.attributes.options ?? [] : [];
-    return options.filter((n) => !NOT_PRESETS.includes(n));
+    return byLoudness(options.filter((n) => !NOT_PRESETS.includes(n)));
   }
 }
 
 // ---------------------------------------------------------------------------
-// Feature: volume slider, optionally colored by range
+// Feature: volume slider, optionally colored by volume thresholds
 // ---------------------------------------------------------------------------
 
-/** The color ranges, lowest first: [{below, color}, ..., {color}]. */
+/** The volume thresholds, lowest first: [{below, color}, ..., {color}]. */
 function colorRanges(config) {
-  const ranges = Array.isArray(config?.color_ranges) ? config.color_ranges : [];
+  const ranges = Array.isArray(config?.volume_thresholds) ? config.volume_thresholds : [];
   const bounded = ranges.filter((r) => typeof r?.below === "number").sort((a, b) => a.below - b.below);
   const rest = ranges.find((r) => r && typeof r.below !== "number");
   return rest ? [...bounded, rest] : bounded;
@@ -304,11 +343,11 @@ class SvsVolume extends HTMLElement {
   }
 
   static getStubConfig() {
-    return { type: "custom:svs-volume" };
+    return { type: "custom:svs-subwoofer-volume" };
   }
 
   static getConfigElement() {
-    return document.createElement("svs-volume-editor");
+    return document.createElement("svs-subwoofer-volume-editor");
   }
 
   setConfig(config) {
@@ -438,7 +477,8 @@ class SvsVolume extends HTMLElement {
     this._key = undefined;
     this._render();
     const { min, max } = this._limits;
-    fire(this, "svs-volume-input", { active, level: (value - min) / (max - min) });
+    const color = this._ranges.length ? rangeColor(this._ranges, value) : undefined;
+    fire(this, "svs-volume-input", { active, level: (value - min) / (max - min), color });
   }
 
   _send(value) {
@@ -473,7 +513,11 @@ class SvsVolumeEditor extends HTMLElement {
     const ranges = colorRanges(this._config);
     const on = ranges.length > 0;
     this._form.schema = [
-      { name: "colored", label: "Color by volume", selector: { boolean: {} } },
+      {
+        name: "colored", label: "Volume thresholds",
+        helper: "Split the slider into three volume ranges, each with its own color.",
+        selector: { boolean: {} },
+      },
       ...(on ? [
         { type: "grid", name: "", schema: [
           { name: "color_1", label: "Quietest color", selector: { ui_color: {} } },
@@ -514,7 +558,7 @@ class SvsVolumeEditor extends HTMLElement {
       } else if (a === b) {
         this._note.textContent = "Both volumes are the same, so the middle color is not used.";
       }
-      config.color_ranges = [
+      config.volume_thresholds = [
         { below: a, color: c1 },
         { below: b, color: v.color_2 ?? "yellow" },
         { color: c3 },
@@ -541,7 +585,8 @@ class SvsStandby extends HTMLElement {
           border-radius: var(--feature-border-radius, 12px);
           color: var(--primary-text-color); font: inherit; font-size: var(--ha-font-size-s, 12px); font-weight: 500;
         }
-        button[aria-pressed="true"] { background: var(--feature-color); color: var(--svs-on-color, #fff); }
+        /* The selected mode's text takes the color behind the control, so it reads on any feature color */
+        button[aria-pressed="true"] { background: var(--feature-color); color: var(--svs-feature-backing, var(--card-background-color, var(--primary-background-color))); }
         button:focus-visible { outline: 2px solid var(--feature-color); outline-offset: -2px; }
       </style>
       <div class="control" role="group" aria-label="Standby mode"><div class="tint"></div></div>`;
@@ -549,7 +594,7 @@ class SvsStandby extends HTMLElement {
   }
 
   static getStubConfig() {
-    return { type: "custom:svs-standby" };
+    return { type: "custom:svs-subwoofer-standby" };
   }
 
   setConfig(config) {
@@ -842,7 +887,7 @@ class SvsCard extends HTMLElement {
       entity,
       finish: "none",
       vibration: true,
-      features: [{ type: "custom:svs-preset-buttons" }, { type: "custom:svs-volume" }],
+      features: [{ type: "custom:svs-subwoofer-presets" }, { type: "custom:svs-subwoofer-volume" }],
       features_position: "bottom",
     };
   }
@@ -933,17 +978,36 @@ class SvsCard extends HTMLElement {
     return Math.max(0, Math.min(1, (v - min) / (max - min)));
   }
 
-  /** The active preset's color, or a neutral ring with no preset. */
+  /**
+   * The driver's ring: while the volume slider moves, the color of the volume
+   * threshold it is in; otherwise the active preset's color; with no preset
+   * (Manual), the threshold color of the volume; and a neutral ring if none apply.
+   */
   _ringColor() {
+    if (this._dragColor) return this._resolve(this._dragColor);
+    const features = this._config?.features ?? [];
     const preset = this._entities.preset;
     const name = preset ? this._hass?.states[preset]?.state : undefined;
-    if (!name || NOT_PRESETS.includes(name) || name === "unavailable" || name === "unknown") return "#6b7079";
-    const presetFeature = (this._config?.features ?? []).find((f) => f.type === "custom:svs-preset-buttons");
-    const color = presetFeature?.presets?.[name]?.color ?? presetDefaults(name).color;
-    if (!color) return "#9aa0a8";
-    // Resolve a theme color to a value the picture can use
-    const probe = HA_COLORS.includes(color) ? getComputedStyle(this).getPropertyValue(`--${color}-color`).trim() : color;
-    return probe || "#9aa0a8";
+    const isPreset = name && !NOT_PRESETS.includes(name) && name !== "unavailable" && name !== "unknown";
+    if (isPreset) {
+      const presetFeature = features.find((f) => f.type === "custom:svs-subwoofer-presets");
+      const color = presetFeature?.presets?.[name]?.color ?? presetDefaults(name).color;
+      if (color) return this._resolve(color);
+    }
+    const thresholds = colorRanges(features.find((f) => f.type === "custom:svs-subwoofer-volume"));
+    const volume = this._entities.volume;
+    const value = volume ? Number(this._hass?.states[volume]?.state) : NaN;
+    if (thresholds.length && Number.isFinite(value)) {
+      const color = rangeColor(thresholds, value);
+      if (color) return this._resolve(color);
+    }
+    return isPreset ? "#9aa0a8" : "#6b7079";
+  }
+
+  // A theme color as a value the picture can use
+  _resolve(color) {
+    const value = HA_COLORS.includes(color) ? getComputedStyle(this).getPropertyValue(`--${color}-color`).trim() : color;
+    return value || "#9aa0a8";
   }
 
   /**
@@ -956,10 +1020,13 @@ class SvsCard extends HTMLElement {
     const stateObj = hass.states[entity];
     if (!stateObj) return hass;
     const picture = driverPicture(this._ringColor());
-    if (this._sourceState !== stateObj || this._lastPicture !== picture) {
+    const extra = subwooferAttributes(hass, entity);
+    const extraKey = JSON.stringify(extra);
+    if (this._sourceState !== stateObj || this._lastPicture !== picture || this._lastExtra !== extraKey) {
       this._sourceState = stateObj;
       this._lastPicture = picture;
-      this._innerState = { ...stateObj, attributes: { ...stateObj.attributes, entity_picture: picture } };
+      this._lastExtra = extraKey;
+      this._innerState = { ...stateObj, attributes: { ...stateObj.attributes, ...extra, entity_picture: picture } };
     }
     return { ...hass, states: { ...hass.states, [entity]: this._innerState } };
   }
@@ -1002,8 +1069,14 @@ class SvsCard extends HTMLElement {
     if (changed(preset) || (changed(volume) && !fromSlider)) this._shake(this._level(), 650);
   }
 
-  _sliderMoved({ active, level }) {
+  _sliderMoved({ active, level, color }) {
     this._sliding = active;
+    // The ring shows the threshold color while the slider moves
+    const dragColor = active ? color : undefined;
+    if (dragColor !== this._dragColor) {
+      this._dragColor = dragColor;
+      if (this._tile && this._hass) this._tile.hass = this._innerHass(this._hass);
+    }
     if (!active) this._slideEnded = Date.now();
     this._sizeDriver(level);
     if (active) this._shake(level);
@@ -1157,7 +1230,7 @@ class SvsCardEditor extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     this._form.hass = hass;
-    if (this._tileEditor) this._tileEditor.hass = hass;
+    if (this._tileEditor) this._tileEditor.hass = withSubwooferAttributes(hass, this._config?.entity);
   }
 
   set lovelace(lovelace) {
@@ -1190,7 +1263,7 @@ class SvsCardEditor extends HTMLElement {
           this._config = next;
           this._fire();
         });
-        editor.hass = this._hass;
+        editor.hass = withSubwooferAttributes(this._hass, this._config.entity);
         if (this._lovelace) editor.lovelace = this._lovelace;
         this.shadowRoot.getElementById("tile").replaceWith(editor);
         this._tileEditor = editor;
@@ -1248,20 +1321,20 @@ const define = (name, cls) => {
 };
 
 if (!customElements.get(CARD_TYPE)) {
-  define("svs-preset-buttons", SvsPresetButtons);
-  define("svs-preset-buttons-editor", SvsPresetButtonsEditor);
-  define("svs-volume", SvsVolume);
-  define("svs-volume-editor", SvsVolumeEditor);
-  define("svs-standby", SvsStandby);
+  define("svs-subwoofer-presets", SvsPresetButtons);
+  define("svs-subwoofer-presets-editor", SvsPresetButtonsEditor);
+  define("svs-subwoofer-volume", SvsVolume);
+  define("svs-subwoofer-volume-editor", SvsVolumeEditor);
+  define("svs-subwoofer-standby", SvsStandby);
   define(CARD_TYPE, SvsCard);
   define(EDITOR_TYPE, SvsCardEditor);
 
   const supports = (role) => (hass, context) => isSvs(hass, context?.entity_id) && !!sibling(hass, context.entity_id, role);
   window.customCardFeatures = window.customCardFeatures || [];
   window.customCardFeatures.push(
-    { type: "svs-preset-buttons", name: "SVS presets", isSupported: supports("preset"), configurable: true },
-    { type: "svs-volume", name: "SVS volume", isSupported: supports("volume"), configurable: true },
-    { type: "svs-standby", name: "SVS standby mode", isSupported: supports("standby") },
+    { type: "svs-subwoofer-presets", name: "SVS Subwoofer presets", isSupported: supports("preset"), configurable: true },
+    { type: "svs-subwoofer-volume", name: "SVS Subwoofer volume", isSupported: supports("volume"), configurable: true },
+    { type: "svs-subwoofer-standby", name: "SVS Subwoofer standby mode", isSupported: supports("standby") },
   );
 
   window.customCards = window.customCards || [];
