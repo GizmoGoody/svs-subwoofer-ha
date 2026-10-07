@@ -58,7 +58,7 @@
       },
       "group_offsets": {
         "title": "Volume Offsets",
-        "description": "Each synced subwoofer plays at the group volume plus its offset, in dB. The group volume control shows the group volume itself."
+        "description": "Each synced subwoofer plays at the group volume plus its offset, in dB. The group volume control shows the group volume itself. When a preset puts every synced subwoofer at the same volume, that volume becomes the group volume."
       }
     },
     "error": {
@@ -117,7 +117,7 @@
       },
       "group_offsets": {
         "title": "Volume Offsets",
-        "description": "Each synced subwoofer plays at the group volume plus its offset, in dB. The group volume control shows the group volume itself."
+        "description": "Each synced subwoofer plays at the group volume plus its offset, in dB. The group volume control shows the group volume itself. When a preset puts every synced subwoofer at the same volume, that volume becomes the group volume."
       }
     },
     "error": {

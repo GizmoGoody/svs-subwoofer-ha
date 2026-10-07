@@ -36,12 +36,13 @@ from .const import (
     PHASE_MAX,
     PHASE_MIN,
     PHASE_STEP,
+    PRESET_MANUAL_OPTION,
     VOLUME_MAX,
     VOLUME_MIN,
     VOLUME_STEP,
 )
 from .coordinator import SVSSubwooferCoordinator
-from .subwoofer_group import SVSGroup, SVSGroupEntity
+from .subwoofer_group import SVSGroup, SVSGroupEntity, active_preset_name
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -266,8 +267,10 @@ class SVSGroupVolumeNumber(SVSGroupEntity, RestoreNumber):
 
     The group volume G is remembered and shown. In Matched mode every synced
     member is set to G. In Offset mode each synced member is set to G plus its
-    own offset. Every change sends each member its absolute target, which
-    restores the offsets after a member was changed on its own.
+    own offset. Offsets apply to changes made with the group volume; when a
+    preset puts every synced member at the same volume, that volume is G.
+    Every change sends each member its absolute target, which restores the
+    offsets after a member was changed on its own.
     """
 
     _attr_translation_key = "group_volume"
@@ -282,6 +285,8 @@ class SVSGroupVolumeNumber(SVSGroupEntity, RestoreNumber):
         """Initialize the entity."""
         super().__init__(group, "volume")
         self._group_volume: float | None = None
+        # The volume each synced member has at the group volume
+        self._expected: dict[str, float] = {}
 
     async def async_added_to_hass(self) -> None:
         """Restore the group volume from before a restart."""
@@ -289,45 +294,76 @@ class SVSGroupVolumeNumber(SVSGroupEntity, RestoreNumber):
         last = await self.async_get_last_number_data()
         if last and last.native_value is not None:
             self._group_volume = last.native_value
+            self._expected = {
+                address: last.native_value + offset
+                for address, offset in self.svs_group.offsets.items()
+            }
+        self._adopt_agreed_volume()
 
-    def _member_group_volumes(self) -> list[float]:
-        """Return the group volume each synced member's volume implies."""
+    def _member_volumes(self) -> dict[str, float]:
+        """Return the volume of each synced member that has reported it."""
         coordinators = self.svs_group.coordinators(self.svs_group.synced)
-        return [
-            float(coordinator.data["VOLUME"]) - self.svs_group.offsets[address]
+        return {
+            address: float(coordinator.data["VOLUME"])
             for address, coordinator in coordinators.items()
             if coordinator.data.get("VOLUME") is not None
-        ]
+        }
 
-    def _agreed_group_volume(self) -> float | None:
-        """Return the group volume every synced member implies, if they agree."""
-        implied = self._member_group_volumes()
-        if implied and len(set(implied)) == 1:
-            return implied[0]
+    def _same_preset_active(self) -> bool:
+        """Return True if every synced member has the same preset active."""
+        coordinators = self.svs_group.coordinators(self.svs_group.synced)
+        names = {active_preset_name(c) for c in coordinators.values()}
+        return len(names) == 1 and not names & {None, PRESET_MANUAL_OPTION}
+
+    def _agreed_volume(self) -> tuple[float, dict[str, float]] | None:
+        """Return the group volume the members agree on, and their volumes.
+
+        The members agree when each is at its offset from one group volume,
+        or when the same preset put them all at the same volume.
+        """
+        volumes = self._member_volumes()
+        if not volumes:
+            return None
+        implied = {
+            volume - self.svs_group.offsets[address]
+            for address, volume in volumes.items()
+        }
+        if len(implied) == 1:
+            return implied.pop(), volumes
+        if len(set(volumes.values())) == 1 and self._same_preset_active():
+            return next(iter(volumes.values())), volumes
         return None
+
+    @callback
+    def _adopt_agreed_volume(self) -> None:
+        agreed = self._agreed_volume()
+        if agreed is not None:
+            self._group_volume, self._expected = agreed
 
     @callback
     def _handle_member_update(self) -> None:
         # When the members agree, for example after a preset load, that is
         # the group volume from now on
-        agreed = self._agreed_group_volume()
-        if agreed is not None:
-            self._group_volume = agreed
+        self._adopt_agreed_volume()
         super()._handle_member_update()
 
     @property
     def native_value(self) -> float | None:
         """Return the group volume.
 
-        When every synced member is at its level for one group volume, that
-        is the group volume. Otherwise the remembered group volume is shown
-        while at least one synced member is still at its level, so changing
-        one member on its own does not change the group. Unknown when none is.
+        When the members agree, that is the group volume. Otherwise the
+        remembered group volume is shown while at least one synced member is
+        still at its volume for it, so changing one member on its own does not
+        change the group. Unknown when none is.
         """
-        agreed = self._agreed_group_volume()
+        agreed = self._agreed_volume()
         if agreed is not None:
-            return agreed
-        if self._group_volume in self._member_group_volumes():
+            return agreed[0]
+        volumes = self._member_volumes()
+        if any(
+            self._expected.get(address) == volume
+            for address, volume in volumes.items()
+        ):
             return self._group_volume
         return None
 
@@ -351,6 +387,7 @@ class SVSGroupVolumeNumber(SVSGroupEntity, RestoreNumber):
             )
         )
         self._group_volume = group_volume
+        self._expected = {address: float(t) for address, t in targets.items()}
         self.async_write_ha_state()
         if not all(results):
             raise HomeAssistantError("Could not set the volume on every subwoofer")
