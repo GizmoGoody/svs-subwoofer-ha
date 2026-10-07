@@ -54,6 +54,10 @@ FEATURES: dict[str, Callable[[], bool]] = {
         _module("svs_protocol").svs_encode("SUB_INFO2", "")[0]
     ),
     "model_name": lambda: _has("coordinator", "_SERIES_MODEL"),
+    # Not ready at startup is not logged as an error
+    "quiet_not_ready": lambda: not _source_contains(
+        "", "Failed to connect to SVS Subwoofer at"
+    ),
     # Subwoofer groups
     "groups": lambda: _has("const", "ENTRY_TYPE_GROUP"),
     # dev only (connection options)

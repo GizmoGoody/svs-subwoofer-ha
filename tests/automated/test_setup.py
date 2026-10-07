@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
-from homeassistant.config_entries import ConfigEntryState
-from homeassistant.core import HomeAssistant
+import logging
+from unittest.mock import patch
 
-from .conftest import FakeSubwoofer, SetupEntry, entity_id, settle
+import pytest
+from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import CONF_ADDRESS, CONF_NAME
+from homeassistant.core import HomeAssistant
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+from custom_components.svs_subwoofer import coordinator as coordinator_module
+from custom_components.svs_subwoofer.const import DOMAIN
+
+from .conftest import ADDRESS, NAME, FakeSubwoofer, SetupEntry, entity_id, settle
+from .features import requires
 
 
 async def test_setup_reads_settings(
@@ -58,3 +68,34 @@ async def test_unload_disconnects(
     assert await hass.config_entries.async_unload(entry.entry_id)
     await settle()
     assert not sub.client.is_connected
+
+
+@requires("quiet_not_ready")
+async def test_subwoofer_not_found_retries_without_an_error(
+    hass: HomeAssistant,
+    sub: FakeSubwoofer,
+    setup_entry: SetupEntry,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A sub the proxy has not seen yet is retried, not logged as an error."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=ADDRESS.lower(),
+        title=NAME,
+        data={CONF_ADDRESS: ADDRESS, CONF_NAME: NAME},
+    )
+    entry.add_to_hass(hass)
+    with patch.object(
+        coordinator_module, "async_ble_device_from_address", return_value=None
+    ):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await settle()
+    assert entry.state is ConfigEntryState.SETUP_RETRY
+    assert not [
+        record
+        for record in caplog.records
+        if record.name.startswith("custom_components.svs_subwoofer")
+        and record.levelno >= logging.ERROR
+    ]
+    # Stop the retry
+    await hass.config_entries.async_unload(entry.entry_id)
