@@ -9,6 +9,7 @@ Control your SVS subwoofer directly from Home Assistant via Bluetooth. Full para
 - Bluetooth auto-discovery of SVS subwoofers
 - Manual MAC address configuration option
 - Support for multiple subwoofers
+- Subwoofer groups: one device that controls several subwoofers together
 - Full parameter control:
   - Volume (-60 to 0 dB)
   - Phase (0-180 degrees)
@@ -278,6 +279,37 @@ automation:
         type: load_preset
         preset: 2
 ```
+
+## Subwoofer Groups
+
+A group is a device of its own that controls several subwoofers together, so a dashboard or an automation needs one control instead of one per subwoofer.
+
+### Creating a Group
+
+1. Add each subwoofer first.
+2. Go to **Settings** → **Devices & services** → **SVS Subwoofer** → **Add entry**.
+3. Choose **Create a subwoofer group**. (This option appears once at least two subwoofers are added.)
+4. Enter a group name, choose at least two subwoofers under **Members**, and choose what the group controls under **Control together**: **Preset**, **Standby mode**, and **Volume**.
+5. If the group controls volume, choose the volume mode (see below).
+
+To change a group later, select **Configure** on its entry. To rename it, use Home Assistant's own rename option on the device or entry.
+
+### Group Entities
+
+| Entity | Behavior |
+|--------|----------|
+| Preset | Lists the presets every subwoofer in the group has, matched by **name**, not by slot: a preset named LOW in one subwoofer's slot 1 matches LOW in another's slot 3. Selecting it loads each subwoofer's own LOW. Presets that not every subwoofer has are left out. Shows **Manual** when every subwoofer is in Manual, and **Mixed** when the subwoofers differ. |
+| Standby Mode | Sets every subwoofer to the same mode. Shows **Mixed** when the subwoofers differ. |
+| Volume | Moves the volume of every subwoofer in the group. |
+
+Changing one subwoofer on its own never changes the group or the other subwoofers.
+
+### Volume Modes
+
+- **Matched**: every subwoofer plays at the group volume.
+- **Offset**: each subwoofer plays at the group volume plus its own offset (-20 to +20 dB). With offsets of -2 and +2 dB and the slider at -9 dB, the subwoofers play at -11 and -7 dB. A change that would push any subwoofer past -60 or 0 dB is not applied.
+
+When every subwoofer is at its level for the same group volume, the group shows that volume. Offsets apply only to changes made with the group volume: when a group preset puts every subwoofer at the same volume, that volume becomes the group volume, and the offsets apply again at the next change of the group volume. If a subwoofer is changed on its own, the group volume stays as it was while at least one subwoofer is still at its group level; once none is, the group volume shows as unknown until it is set again, which restores every subwoofer to its level.
 
 ## Multi-Subwoofer Control
 
