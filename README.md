@@ -289,7 +289,7 @@ A group is a device of its own that controls several subwoofers together, so a d
 1. Add each subwoofer first.
 2. Go to **Settings** → **Devices & services** → **SVS Subwoofer** → **Add entry**.
 3. Choose **Create a subwoofer group**. (This option appears once at least two subwoofers are added.)
-4. Enter a group name, choose at least two subwoofers, and choose what the group controls: **Preset**, **Standby mode**, and **Volume**.
+4. Enter a group name, choose at least two subwoofers under **Members**, and choose what the group controls under **Control together**: **Preset**, **Standby mode**, and **Volume**.
 5. If the group controls volume, choose the volume mode (see below).
 
 To change a group later, select **Configure** on its entry. To rename it, use Home Assistant's own rename option on the device or entry.

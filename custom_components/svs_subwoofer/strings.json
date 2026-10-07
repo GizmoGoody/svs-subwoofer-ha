@@ -37,7 +37,7 @@
         "description": "A group controls several subwoofers together from one device. Changing a subwoofer on its own never changes the group or the other subwoofers.",
         "data": {
           "name": "Group name",
-          "members": "Subwoofers",
+          "members": "Members",
           "features": "Control together"
         },
         "data_description": {
@@ -92,7 +92,7 @@
         "title": "Subwoofer Group",
         "description": "Change the subwoofers in this group and what it controls. To rename the group, use the rename option on its device or integration entry.",
         "data": {
-          "members": "Subwoofers",
+          "members": "Members",
           "features": "Control together"
         },
         "data_description": {
