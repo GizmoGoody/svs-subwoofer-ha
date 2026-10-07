@@ -95,12 +95,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: SVSConfigEntry) -> bool:
         config_entry_id=entry.entry_id, **coordinator.device_info
     )
 
+    # Not ready (for example, the Bluetooth proxy has not seen the sub yet
+    # after a restart) is not an error: Home Assistant logs the reason, shows
+    # it on the integration, and retries, at once when Bluetooth sees the sub
     try:
         await coordinator.async_config_entry_first_refresh()
-    except Exception as err:
-        _LOGGER.error("Failed to connect to SVS Subwoofer at %s: %s", address, err)
+    except ConfigEntryNotReady:
         await coordinator.async_shutdown()
-        raise ConfigEntryNotReady(f"Failed to connect to {address}") from err
+        raise
+    except Exception as err:
+        await coordinator.async_shutdown()
+        raise ConfigEntryNotReady(f"Could not connect to {address}: {err}") from err
 
     # Store coordinator
     entry.runtime_data = coordinator
