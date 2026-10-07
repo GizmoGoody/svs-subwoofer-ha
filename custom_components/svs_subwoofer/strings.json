@@ -42,7 +42,7 @@
         },
         "data_description": {
           "members": "Choose at least two subwoofers.",
-          "features": "Each setting chosen here gets one control for the whole group. Settings left out stay with each subwoofer."
+          "features": "Each enabled setting gets a group entity that controls it on every member. Members keep all of their own controls."
         }
       },
       "group_volume": {
@@ -97,7 +97,7 @@
         },
         "data_description": {
           "members": "Choose at least two subwoofers.",
-          "features": "Each setting chosen here gets one control for the whole group. Settings left out stay with each subwoofer."
+          "features": "Each enabled setting gets a group entity that controls it on every member. Members keep all of their own controls."
         }
       },
       "group_volume": {
