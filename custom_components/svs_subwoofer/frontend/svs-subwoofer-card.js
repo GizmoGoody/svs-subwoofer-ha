@@ -2342,7 +2342,8 @@ class SvsPanelCardEditor extends HTMLElement {
     const duplicate = () => {
       const taken = new Set(this._members.map((m) => m.entity));
       const next = sortPairs(subwoofers(this._hass)).map(([id]) => id).find((id) => !taken.has(id));
-      const copy = JSON.parse(JSON.stringify(member));
+      // The row as it is now, with any edits made on its tab
+      const copy = JSON.parse(JSON.stringify(this._members[index]));
       delete copy.name;
       if (next) copy.entity = next;
       const members = [...this._members];
