@@ -103,3 +103,46 @@ jobs:
       - name: Report failures as annotations
         if: failure()
         run: python .github/scripts/annotate_failures.py junit.xml
+
+  ui:
+    name: Card UI tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch || github.ref_name }}
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: ci-tools
+      - name: Add the tests from ci
+        run: |
+          cp -r ci-tools/tests ci-tools/pytest.ini .
+          mkdir -p .github && cp -r ci-tools/.github/scripts .github/
+          rm -rf ci-tools
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install test dependencies
+        run: |
+          pip install pytest-homeassistant-custom-component
+          python .github/scripts/component_requirements.py > component-requirements.txt
+          pip install -r component-requirements.txt
+      - name: Run the card UI tests
+        env:
+          SVS_UI_TESTS: "1"
+          SVS_UI_OUT: ui-results
+        run: pytest tests/automated/test_card_ui.py -q -rs -s --junitxml=junit-ui.xml
+      - name: Report failures as annotations
+        if: failure()
+        run: python .github/scripts/annotate_failures.py junit-ui.xml
+      - name: Keep the screenshots and the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: card-ui
+          path: ui-results
+          if-no-files-found: ignore

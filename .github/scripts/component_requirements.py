@@ -10,7 +10,8 @@ from pathlib import Path
 
 import homeassistant.components
 
-COMPONENTS = ("bluetooth", "bluetooth_adapters", "usb")
+# frontend: the card UI tests serve Home Assistant's real frontend
+COMPONENTS = ("bluetooth", "bluetooth_adapters", "frontend", "usb")
 
 base = Path(homeassistant.components.__file__).parent
 manifest = Path("custom_components/svs_subwoofer/manifest.json")
