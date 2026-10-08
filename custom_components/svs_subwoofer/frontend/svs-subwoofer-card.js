@@ -2284,8 +2284,9 @@ class SvsPanelCardEditor extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this.shadowRoot.innerHTML = `
       <style>
-        h3 { margin: 32px 0 4px; font-size: var(--ha-font-size-l, 16px); font-weight: 500; }
+        h3 { margin: 24px 0 4px; font-size: var(--ha-font-size-l, 16px); font-weight: 500; }
         .hint { margin: 0 0 8px; color: var(--secondary-text-color); font-size: var(--ha-font-size-s, 12px); }
+        ha-expansion-panel .hint { margin: 8px 0 0; }
         .toolbar { display: flex; align-items: center; gap: 4px; border-bottom: 1px solid var(--divider-color); margin-bottom: 16px; }
         .tabs { display: flex; flex: 1; gap: 4px; overflow-x: auto; }
         .tab {
@@ -2294,19 +2295,24 @@ class SvsPanelCardEditor extends HTMLElement {
         }
         .tab[aria-selected="true"] { color: var(--primary-color); border-bottom-color: var(--primary-color); }
         .tab:focus-visible { outline: 2px solid var(--primary-color); outline-offset: -2px; }
-        .row-options { display: flex; align-items: center; justify-content: space-between; gap: 4px; margin-bottom: 8px; }
+        .row-options { display: flex; align-items: center; justify-content: flex-end; gap: 4px; margin-bottom: 8px; }
         .row-options .buttons { display: flex; gap: 4px; }
         ha-form { display: block; margin-top: 24px; }
       </style>
-      <div id="card"></div>
-      <h3>Subwoofers in the panel</h3>
-      <p class="hint">One row per subwoofer, below the card. Select a number to edit that subwoofer's row; the plus button adds a subwoofer.</p>
+      <ha-expansion-panel outlined header="Main subwoofer">
+        <p class="hint">We recommend a subwoofer group here, so the card controls all of its subwoofers together.</p>
+        <div id="card"></div>
+      </ha-expansion-panel>
+      <h3>Subwoofers in the collapsible section</h3>
+      <p class="hint">We recommend the group's member subwoofers here, so each one can also be adjusted on its own. Each numbered tab is one subwoofer; the plus button adds one.</p>
+      <div id="rows"></div>
       <div class="toolbar">
-        <div class="tabs" role="tablist" aria-label="Subwoofers in the panel"></div>
+        <div class="tabs" role="tablist" aria-label="Subwoofers in the collapsible section"></div>
         <ha-icon-button id="add"></ha-icon-button>
       </div>
       <div id="body"></div>`;
     this._cardSlot = this.shadowRoot.getElementById("card");
+    this._rowsSlot = this.shadowRoot.getElementById("rows");
     this._tabs = this.shadowRoot.querySelector(".tabs");
     this._body = this.shadowRoot.getElementById("body");
     const add = this.shadowRoot.getElementById("add");
@@ -2379,8 +2385,8 @@ class SvsPanelCardEditor extends HTMLElement {
     else this._showMember(this._selected);
   }
 
-  // The card itself, above the tabs: the SVS Subwoofer card's editor, and how
-  // the rows open
+  // The main subwoofer, in a collapsed section above the tabs: the SVS
+  // Subwoofer card's editor. Below it, how the collapsible section opens.
   _showCard() {
     if (!this._cardEditor) {
       this._cardEditor = document.createElement(EDITOR_TYPE);
@@ -2401,7 +2407,8 @@ class SvsPanelCardEditor extends HTMLElement {
         this._fire({ ...this._config, members_toggle: v.members_toggle !== false, members_open: v.members_open !== false });
         this._renderRowsForm();
       });
-      this._cardSlot.replaceChildren(this._cardEditor, this._rowsForm);
+      this._cardSlot.replaceChildren(this._cardEditor);
+      this._rowsSlot.replaceChildren(this._rowsForm);
     }
     const card = { ...this._config };
     for (const key of PANEL_KEYS) delete card[key];
@@ -2415,12 +2422,12 @@ class SvsPanelCardEditor extends HTMLElement {
     this._rowsForm.hass = this._hass;
     this._rowsForm.schema = [
       {
-        name: "members_toggle", label: "Tap the card to show or hide the subwoofers",
+        name: "members_toggle", label: "Tap the card to toggle the collapsible section",
         helper: "While this is on, a tap on the card does this instead of its Tap behavior (under Interactions). Icon tap behavior still works.",
         selector: { boolean: {} },
       },
       ...(this._config.members_toggle === false ? [] : [
-        { name: "members_open", label: "Show the subwoofers when the page opens", selector: { boolean: {} } },
+        { name: "members_open", label: "Show the collapsible section at load", selector: { boolean: {} } },
       ]),
     ];
     this._rowsForm.data = { members_toggle: this._config.members_toggle !== false, members_open: this._config.members_open !== false };
