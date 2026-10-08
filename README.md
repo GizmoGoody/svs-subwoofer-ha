@@ -160,8 +160,8 @@ All three take their height, corners, and colors from your theme.
 
 Edit a dashboard, select **Add card**, and search for **SVS Subwoofer**. The card is Home Assistant's tile card: every tile card option works the same way and appears in the same editor. The tile card needs one entity: choose the subwoofer's or group's **Volume** entity, so the driver's size follows it. **State content** can also show the subwoofer's **Preset** and **Standby mode** next to the volume. Below the tile card's options, the **SVS style** panel adds:
 
-- **Finish**: None (your theme's own card), Premium Black Ash, Black Oak Real Wood Veneer, Piano Gloss Black, or Piano Gloss White. How the controls sit on the finish is set by **Features style**.
-- **Randomize grain** (the wood finishes) draws a new board, running vertically or horizontally at a new grain size. **Randomize reflections** (the gloss finishes) moves the reflections.
+- **Finish**: None (your theme's own card), Premium Black Ash, Black Oak Real Wood Veneer, Piano Gloss Black, Piano Gloss White, Fabric (a dark speaker cloth), or Grille (a perforated metal speaker grille). How the controls sit on the finish is set by **Features style**.
+- **Randomize grain** (the wood finishes) draws a new board, running vertically or horizontally at a new grain size. **Randomize reflections** (the gloss finishes, Fabric, and Grille) moves the reflections: very subdued on the fabric, a little stronger on the grille.
 - **Finish extent**: **Card**, or **Container**. In a `custom:expander-card`, choose **Container** on the header card and on each card inside: the header draws the finish across the whole expander card, and the cards inside let it show through, so they read as one card.
 - **Features style** (with a finish), the same option with the same values as on The Lampster card:
   - **Match style**: the controls sit on the finish, and it shows through them.
@@ -176,7 +176,7 @@ In place of the tile card's icon, the card shows a subwoofer driver. Its size fo
 ```yaml
 type: custom:svs-subwoofer-card
 entity: number.subwoofer_both_volume
-finish: black_ash        # none, black_ash, black_oak, gloss_black, gloss_white
+finish: black_ash        # none, black_ash, black_oak, gloss_black, gloss_white, fabric, grille
 features_style: inset     # match, flat or inset
 pattern: 4242            # the grain or reflection pattern (Randomize sets it)
 vibration: true

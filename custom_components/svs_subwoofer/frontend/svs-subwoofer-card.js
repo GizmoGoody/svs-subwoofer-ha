@@ -780,6 +780,8 @@ const FINISHES = [
   ["black_oak", "Black Oak Real Wood Veneer"],
   ["gloss_black", "Piano Gloss Black"],
   ["gloss_white", "Piano Gloss White"],
+  ["fabric", "Fabric"],
+  ["grille", "Grille"],
 ];
 const WOOD = ["black_ash", "black_oak"];
 const finishTone = (finish) => (finish === "gloss_white" ? "light" : finish === "none" ? null : "dark");
@@ -825,6 +827,12 @@ function drawFinish(ctx, finish, pattern, w, h) {
   const zoom = wood ? .6 + r() * 1.1 : 1;
   const D = Math.ceil(Math.sqrt(w * w + h * h) / Math.min(zoom, 1)) + 20;
   const half = D / 2;
+  if (finish === "fabric" || finish === "grille") {
+    const img = ctx.createImageData(w, h);
+    (finish === "fabric" ? drawFabric : drawGrille)(img.data, w, h, pattern);
+    ctx.putImageData(img, 0, 0);
+    return;
+  }
   if (finish === "black_ash") {
     // Wide, wavy grey bands with a rough, porous texture on black, pinching
     // together and swirling into long ovals: the contour rings of a warped
@@ -924,6 +932,68 @@ function drawFinish(ctx, finish, pattern, w, h) {
   }
 }
 
+/**
+ * Speaker fabric: a dark charcoal, fine knit (two crossing fine weaves and a
+ * speckle), with a very subdued sheen whose angle and place come from the
+ * pattern.
+ */
+function drawFabric(px, w, h, pattern) {
+  const r = rng(pattern * 31 + 7), noise = valueNoise(pattern * 7 + 3);
+  const angle = r() * Math.PI, ca = Math.cos(angle), sa = Math.sin(angle);
+  const cx = r() * w, cy = r() * h, reach = Math.max(w, h) * (.7 + r() * .6);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const k1 = Math.sin((x + y) * 1.9 + noise(x * .35, y * .35, 1) * 3) * .5 + .5;
+      const k2 = Math.sin((x - y) * 1.7 + noise(x * .3 + 50, y * .3, 1) * 3) * .5 + .5;
+      const speck = noise(x * .7 + 20, y * .7, 2);
+      const d = ((x - cx) * ca + (y - cy) * sa) / reach;
+      const t = 57 + (k1 * k2 - .25) * 12 + (speck - .5) * 22 + (noise(x * .02, y * .02, 2) - .5) * 6 + Math.max(0, 1 - d * d) * 5;
+      const o = (y * w + x) * 4;
+      px[o] = t; px[o + 1] = t; px[o + 2] = t + 2; px[o + 3] = 255;
+    }
+  }
+}
+
+/**
+ * A perforated metal speaker grille: hexagonal holes with a vertex straight
+ * up and down, light showing through them, on a dark metal web. The metal
+ * reflects a little more than fabric; the reflection's angle and place come
+ * from the pattern.
+ */
+function drawGrille(px, w, h, pattern) {
+  const r = rng(pattern * 31 + 7), noise = valueNoise(pattern * 7 + 5);
+  const R = 6, across = Math.sqrt(3) * R, down = 1.5 * R, hole = R * .8;
+  const angle = r() * Math.PI, ca = Math.cos(angle), sa = Math.sin(angle);
+  const cx = r() * w, cy = r() * h, reach = Math.max(w, h) * (.5 + r() * .5);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      // The nearest hole center (rows offset by half a hole)
+      const row = Math.round(y / down), col = Math.round((x - ((row & 1) ? across / 2 : 0)) / across);
+      let best = Infinity, bx = 0, by = 0;
+      for (let rr = row - 1; rr <= row + 1; rr++) {
+        const shift = (rr & 1) ? across / 2 : 0;
+        for (let cc = col - 1; cc <= col + 1; cc++) {
+          const X = cc * across + shift, Y = rr * down, dd = (x - X) ** 2 + (y - Y) ** 2;
+          if (dd < best) { best = dd; bx = X; by = Y; }
+        }
+      }
+      // Within a hexagon whose flat sides are left and right (vertices up and down)
+      const ax = Math.abs(x - bx), ay = Math.abs(y - by);
+      const dist = Math.max(ax, ax * .5 + ay * .8660254) / (hole * .8660254);
+      const d = ((x - cx) * ca + (y - cy) * sa) / reach, sheen = Math.max(0, 1 - d * d);
+      let t;
+      if (dist < 1) {
+        const edge = Math.min(1, (1 - dist) * 5);
+        t = 30 + (132 + (noise(bx * .05, by * .05, 2) - .5) * 18 + sheen * 26 - 30) * edge;
+      } else {
+        t = 26 + sheen * 22 + (noise(x * .5, y * .5, 1) - .5) * 6;
+      }
+      const o = (y * w + x) * 4;
+      px[o] = t; px[o + 1] = t; px[o + 2] = t + 2; px[o + 3] = 255;
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // The driver picture shown in place of the tile icon
 // ---------------------------------------------------------------------------
@@ -949,7 +1019,7 @@ const OWN_KEYS = ["finish", "pattern", "vibration", "bluetooth", "finish_extent"
 // The same keys and values as The Lampster card
 const FEATURES_STYLES = [["match", "Match style"], ["flat", "Flat"], ["inset", "Inset"]];
 // The finish's base color, without grain or reflections, for Flat
-const FLAT = { black_ash: "#1a1a1d", black_oak: "#161617", gloss_black: "#101113", gloss_white: "#e7e9ed" };
+const FLAT = { black_ash: "#1a1a1d", black_oak: "#161617", gloss_black: "#101113", gloss_white: "#e7e9ed", fabric: "#2f2f31", grille: "#1d1e20" };
 const BLUETOOTH = [
   ["tap", "Show, and tap to connect or disconnect"],
   ["status", "Show only when not connected"],
@@ -1068,7 +1138,7 @@ class SvsCard extends HTMLElement {
           --ha-card-box-shadow: none; --ha-card-border-color: transparent;
           --ha-card-backdrop-filter: none;
         }
-        .tile.dark { --primary-text-color: rgba(255, 255, 255, .95); --secondary-text-color: rgba(235, 235, 240, .7); }
+        .tile.dark { --primary-text-color: rgba(255, 255, 255, .95); --secondary-text-color: rgba(235, 235, 240, .7); text-shadow: 0 1px 2px rgba(0, 0, 0, .8); }
         .tile.light { --primary-text-color: rgba(0, 0, 0, .85); --secondary-text-color: rgba(40, 40, 48, .62); }
         /* Flat and Inset: no finish shows through a control */
         .tile.dark.solid { --svs-feature-backing: ${BACKING.dark}; }
@@ -1873,6 +1943,8 @@ const RANDOMIZE_LABEL = {
   black_oak: "Randomize grain",
   gloss_black: "Randomize reflections",
   gloss_white: "Randomize reflections",
+  fabric: "Randomize reflections",
+  grille: "Randomize reflections",
 };
 
 class SvsCardEditor extends HTMLElement {
