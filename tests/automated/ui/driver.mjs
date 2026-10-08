@@ -28,10 +28,11 @@ const browser = spawn(chrome, [
 let socket;
 try {
   let page;
-  for (let i = 0; i < 100 && !page; i++) {
+  for (let i = 0; i < 300 && !page; i++) {
     try {
       const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
       page = list.find((t) => t.type === "page");
+      if (!page) await sleep(100);
     } catch {
       await sleep(100);
     }
