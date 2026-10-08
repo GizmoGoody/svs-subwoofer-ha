@@ -354,6 +354,21 @@ class SvsPresetButtonsEditor extends HTMLElement {
 // Feature: volume slider, optionally colored by volume thresholds
 // ---------------------------------------------------------------------------
 
+/**
+ * The slider's range: the entity's own range (-60 to 0 dB), or the part of it
+ * chosen in the feature (min and max), so the volumes actually used get the
+ * whole width of the slider.
+ */
+function sliderRange(config, stateObj) {
+  const a = stateObj?.attributes ?? {};
+  const lo = a.min ?? -60, hi = a.max ?? 0;
+  const clamp = (v, d) => (Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d);
+  let min = clamp(config?.min, lo), max = clamp(config?.max, hi);
+  if (min > max) [min, max] = [max, min];
+  if (min === max) [min, max] = [lo, hi];
+  return { min, max, step: a.step ?? 1 };
+}
+
 /** The volume thresholds, lowest first: [{below, color}, ..., {color}]. */
 function colorRanges(config) {
   const ranges = Array.isArray(config?.volume_thresholds) ? config.volume_thresholds : [];
@@ -427,8 +442,7 @@ class SvsVolume extends HTMLElement {
   }
 
   get _limits() {
-    const a = this._hass?.states[this._entity]?.attributes ?? {};
-    return { min: a.min ?? -60, max: a.max ?? 0, step: a.step ?? 1 };
+    return sliderRange(this._config, this._hass?.states[this._entity]);
   }
 
   _render() {
@@ -567,7 +581,14 @@ class SvsVolumeEditor extends HTMLElement {
     if (this._hass) this._form.hass = this._hass;
     const ranges = colorRanges(this._config);
     const on = ranges.length > 0;
+    const db = { number: { mode: "box", step: 1, min: -60, max: 0, unit_of_measurement: "dB" } };
     this._form.schema = [
+      {
+        type: "grid", name: "", schema: [
+          { name: "min", label: "Slider from", selector: db },
+          { name: "max", label: "Slider to", selector: db },
+        ],
+      },
       {
         name: "colored", label: "Volume thresholds",
         helper: "Split the slider into three volume ranges, each with its own color.",
@@ -585,14 +606,16 @@ class SvsVolumeEditor extends HTMLElement {
         { name: "color_3", label: "Loudest color", selector: { ui_color: {} } },
       ] : []),
     ];
+    const range = { min: this._config.min ?? -60, max: this._config.max ?? 0 };
     this._form.data = on
       ? {
+        ...range,
         colored: true,
         color_1: ranges[0]?.color, split_1: ranges[0]?.below,
         color_2: ranges[1]?.color, split_2: ranges[1]?.below,
         color_3: ranges[2]?.color,
       }
-      : { colored: false };
+      : { ...range, colored: false };
   }
 
   _changed(ev) {
@@ -600,6 +623,19 @@ class SvsVolumeEditor extends HTMLElement {
     const v = ev.detail.value;
     this._note.textContent = "";
     let config = { type: this._config.type };
+    // The range is kept only when it differs from the full -60 to 0 dB; ends
+    // entered the other way round are swapped
+    let min = Number.isFinite(v.min) ? v.min : -60, max = Number.isFinite(v.max) ? v.max : 0;
+    if (min > max) {
+      [min, max] = [max, min];
+      this._note.textContent = "Slider from and Slider to were the other way round, so they were swapped.";
+    }
+    if (min === max) {
+      this._note.textContent = "Slider from and Slider to are the same, so the slider uses the full range.";
+    } else {
+      if (min !== -60) config.min = min;
+      if (max !== 0) config.max = max;
+    }
     if (v.colored) {
       let a = Number.isFinite(v.split_1) ? v.split_1 : -30;
       let b = Number.isFinite(v.split_2) ? v.split_2 : -15;
@@ -609,9 +645,9 @@ class SvsVolumeEditor extends HTMLElement {
       if (a > b) {
         [a, b] = [b, a];
         [c1, c3] = [c3, c1];
-        this._note.textContent = "The two volumes were the other way round, so they were swapped, and the quietest and loudest colors moved with them.";
+        this._note.textContent = "The two threshold volumes were the other way round, so they were swapped, and the quietest and loudest colors moved with them.";
       } else if (a === b) {
-        this._note.textContent = "Both volumes are the same, so the middle color is not used.";
+        this._note.textContent = "Both threshold volumes are the same, so the middle color is not used.";
       }
       config.volume_thresholds = [
         { below: a, color: c1 },
@@ -865,15 +901,15 @@ const BT_ON = "M14.88,16.29L13,18.17V14.41M13,5.83L14.88,7.71L13,9.58M17.71,7.71
 const BT_OFF = "M13 5.83l1.88 1.88-1.6 1.6 1.41 1.41 3.02-3.02L12 2h-1v5.03l2 2zM5.41 4L4 5.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l4.29-4.29 2.3 2.29L20 18.59 5.41 4zM13 18.17v-3.76l1.88 1.88L13 18.17z";
 
 // Options this card adds to the tile card's
-const OWN_KEYS = ["finish", "pattern", "vibration", "bluetooth", "finish_area"];
+const OWN_KEYS = ["finish", "pattern", "vibration", "bluetooth", "finish_extent"];
 const BLUETOOTH = [
   ["tap", "Show, and tap to connect or disconnect"],
   ["status", "Show only when not connected"],
   ["off", "Hide"],
 ];
-const FINISH_AREAS = [
-  ["card", "This card"],
-  ["expander", "The expander card around it"],
+const FINISH_EXTENTS = [
+  ["card", "Card"],
+  ["container", "Container"],
 ];
 
 function tileConfig(config) {
@@ -1056,7 +1092,9 @@ class SvsCard extends HTMLElement {
     const stateObj = id ? this._hass?.states[id] : undefined;
     const v = value ?? Number(stateObj?.state);
     if (!Number.isFinite(v)) return 0;
-    const min = stateObj?.attributes.min ?? -60, max = stateObj?.attributes.max ?? 0;
+    // The same range as the card's volume slider, if it has one
+    const slider = (this._config?.features ?? []).find((f) => f.type === "custom:svs-subwoofer-volume");
+    const { min, max } = sliderRange(slider, stateObj);
     return Math.max(0, Math.min(1, (v - min) / (max - min)));
   }
 
@@ -1235,7 +1273,7 @@ class SvsCard extends HTMLElement {
     if (!this._config) return;
     const finish = this._config.finish;
     const tone = finishTone(finish);
-    const onExpander = !!tone && this._config.finish_area === "expander";
+    const onExpander = !!tone && this._config.finish_extent === "container";
     this._frame.classList.toggle("finished", !!tone);
     this._frame.classList.toggle("through", onExpander);
     if (this._tile) {
@@ -1291,7 +1329,7 @@ class SvsCard extends HTMLElement {
     if (!this._expanderResize) {
       this._expanderResize = new ResizeObserver(() => {
         clearTimeout(this._expanderTimer);
-        this._expanderTimer = setTimeout(() => this._paintExpander(this._config?.finish_area === "expander" && !!finishTone(this._config?.finish)), 150);
+        this._expanderTimer = setTimeout(() => this._paintExpander(this._config?.finish_extent === "container" && !!finishTone(this._config?.finish)), 150);
       });
       this._expanderResize.observe(surface);
     }
@@ -1396,7 +1434,7 @@ class SvsCardEditor extends HTMLElement {
       ev.stopPropagation();
       const v = ev.detail.value;
       this._update({
-        finish: v.finish ?? "none", finish_area: v.finish_area ?? "card",
+        finish: v.finish ?? "none", finish_extent: v.finish_extent ?? "card",
         vibration: v.vibration !== false, bluetooth: v.bluetooth ?? "tap",
       });
     });
@@ -1456,9 +1494,9 @@ class SvsCardEditor extends HTMLElement {
     this._form.schema = [
       { name: "finish", label: "Finish", selector: { select: { mode: "dropdown", options: FINISHES.map(([value, label]) => ({ value, label })) } } },
       ...(c.finish === "none" ? [] : [{
-        name: "finish_area", label: "Finish covers",
-        helper: "In an expander card, choose The expander card around it on the header card, and on each card inside it: the header draws the finish across the whole expander, and the cards inside let it show through.",
-        selector: { select: { mode: "dropdown", options: FINISH_AREAS.map(([value, label]) => ({ value, label })) } },
+        name: "finish_extent", label: "Finish extent",
+        helper: "Container: in an expander card, choose it on the header card and on each card inside. The header draws the finish across the whole expander card, and the cards inside let it show through.",
+        selector: { select: { mode: "dropdown", options: FINISH_EXTENTS.map(([value, label]) => ({ value, label })) } },
       }]),
       {
         name: "bluetooth", label: "Bluetooth badge",
@@ -1471,7 +1509,7 @@ class SvsCardEditor extends HTMLElement {
         selector: { boolean: {} },
       },
     ];
-    this._form.data = { finish: c.finish, finish_area: c.finish_area ?? "card", vibration: c.vibration !== false, bluetooth: c.bluetooth ?? "tap" };
+    this._form.data = { finish: c.finish, finish_extent: c.finish_extent ?? "card", vibration: c.vibration !== false, bluetooth: c.bluetooth ?? "tap" };
     const label = RANDOMIZE_LABEL[c.finish];
     this.shadowRoot.getElementById("row").style.display = label ? "" : "none";
     this.shadowRoot.getElementById("randomize").textContent = label ?? "";
@@ -1499,10 +1537,10 @@ function explicit(config) {
   c.bluetooth = BLUETOOTH.some(([id]) => id === c.bluetooth) ? c.bluetooth : "tap";
   if (c.finish === "none") {
     delete c.pattern;
-    delete c.finish_area;
+    delete c.finish_extent;
   } else {
     c.pattern = Number.isFinite(c.pattern) ? c.pattern : DEFAULT_PATTERN;
-    c.finish_area = FINISH_AREAS.some(([id]) => id === c.finish_area) ? c.finish_area : "card";
+    c.finish_extent = FINISH_EXTENTS.some(([id]) => id === c.finish_extent) ? c.finish_extent : "card";
   }
   return c;
 }
