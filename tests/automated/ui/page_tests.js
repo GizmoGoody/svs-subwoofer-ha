@@ -197,7 +197,7 @@
       const duplicate = [...el.shadowRoot.querySelectorAll("ha-icon-button")].find((b) => b.label === "Duplicate");
       if (!duplicate) throw new Error("no Duplicate button");
       duplicate.click();
-      await until(() => tabs().length === 3, "a third tab");
+      await until(() => tabs().length === 2, "a second tab");
       expectEqual(tabs().map((t) => t.textContent), ["1", "2"], "tab labels after duplicating");
       expectEqual(saved.at(-1).members.map((m) => m.entity), [first, second], "the rows' subwoofers");
       expectEqual(saved.at(-1).members[1].state_content, ["state", "preset"], "the copy's state content");
