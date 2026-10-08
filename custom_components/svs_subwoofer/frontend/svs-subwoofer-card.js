@@ -465,7 +465,7 @@ class SvsVolume extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this.shadowRoot.innerHTML = `
       <style>${FEATURE_CSS}
-        .control { cursor: pointer; touch-action: none; outline: none; }
+        .control { cursor: pointer; touch-action: none; outline: none; user-select: none; -webkit-user-select: none; }
         .control:focus-visible { box-shadow: 0 0 0 2px var(--fill, var(--feature-color)); }
         .zones { position: absolute; inset: 0; display: flex; }
         .zones i { display: block; height: 100%; opacity: .2; }
@@ -498,7 +498,10 @@ class SvsVolume extends HTMLElement {
     this._control.addEventListener("pointerdown", (ev) => this._down(ev));
     this._control.addEventListener("pointermove", (ev) => this._move(ev));
     this._control.addEventListener("pointerup", (ev) => this._up(ev));
-    this._control.addEventListener("pointercancel", (ev) => this._up(ev));
+    // A cancelled drag reports no position (0), which is the slider's left
+    // end: it ends at the last position the drag reached instead
+    this._control.addEventListener("pointercancel", () => this._up());
+    this._control.addEventListener("lostpointercapture", () => this._up());
     this._control.addEventListener("keydown", (ev) => this._key(ev));
     this._control.addEventListener("keyup", () => this._keyUp());
     keepTaps(this);
@@ -603,6 +606,9 @@ class SvsVolume extends HTMLElement {
 
   _down(ev) {
     ev.stopPropagation();
+    // No text selection, and no native drag of one, which would cancel this drag
+    ev.preventDefault();
+    this._control.focus({ preventScroll: true });
     this._control.setPointerCapture(ev.pointerId);
     this._dragging = this._valueAt(ev);
     this._moved(true);
@@ -616,7 +622,7 @@ class SvsVolume extends HTMLElement {
 
   _up(ev) {
     if (this._dragging === undefined) return;
-    const value = this._valueAt(ev);
+    const value = ev ? this._valueAt(ev) : this._dragging;
     this._dragging = undefined;
     this._send(value);
     this._moved(false, value);
