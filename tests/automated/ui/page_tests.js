@@ -255,6 +255,36 @@
       expectEqual(calls.map((c) => c.value), [0], "the value sent");
     });
 
+    await test("volume: the value callout shows above the slider, and nothing clips it", async () => {
+      const card = document.createElement("svs-subwoofer-card");
+      card.setConfig({
+        type: "custom:svs-subwoofer-card", entity: first, finish: "black_ash",
+        features: [{ type: "custom:svs-subwoofer-volume" }],
+      });
+      card.hass = { ...hass(), callService: () => {} };
+      stage().append(card);
+      const feature = await until(() => findDeep(card.shadowRoot, "svs-subwoofer-volume"), "the volume slider");
+      const control = await until(() => feature.shadowRoot.querySelector(".control[aria-valuenow]"), "the slider's value");
+      const tooltip = feature.shadowRoot.querySelector(".tooltip");
+      if (control.contains(tooltip)) throw new Error("the callout is inside the control, which clips");
+      control.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+      await until(() => tooltip.classList.contains("visible"), "the callout to show");
+      if (!/dB$/.test(tooltip.textContent)) throw new Error(`the callout says "${tooltip.textContent}"`);
+      const tip = tooltip.getBoundingClientRect(), slider = control.getBoundingClientRect();
+      if (tip.bottom > slider.top) throw new Error("the callout is not above the slider");
+      // Only the finish is clipped to the card's outline, not the tile card
+      const frame = card.shadowRoot.querySelector(".frame");
+      if (getComputedStyle(frame).overflow !== "visible") throw new Error("the card's frame clips its tile card");
+      if (getComputedStyle(card.shadowRoot.querySelector(".clip")).overflow !== "hidden") throw new Error("the finish is not clipped to the outline");
+      const panel = document.createElement("svs-subwoofer-panel-card");
+      panel.setConfig({ type: "custom:svs-subwoofer-panel-card", entity: first, finish: "black_ash", members: [{ entity: first }] });
+      panel.hass = hass();
+      stage().append(panel);
+      const box = await until(() => panel.shadowRoot.querySelector(".panel"), "the panel");
+      if (getComputedStyle(box).overflow !== "visible") throw new Error("the panel clips its rows");
+      await until(() => !tooltip.classList.contains("visible"), "the callout to hide after the key", 3000);
+    });
+
     await test("volume editor: copies the main subwoofer's volume in a panel row only", async () => {
       const main = { type: "custom:svs-subwoofer-volume", min: -40, volume_thresholds: [{ below: -20, color: "green" }, { color: "red" }] };
       // Outside a panel row: no copy button
