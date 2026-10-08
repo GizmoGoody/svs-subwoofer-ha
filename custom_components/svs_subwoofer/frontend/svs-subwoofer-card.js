@@ -710,7 +710,7 @@ class SvsVolumeEditor extends HTMLElement {
       this._note.className = "note";
       this._note.setAttribute("role", "status");
       this._copy = document.createElement("ha-button");
-      this._copy.textContent = "Copy the main subwoofer's Volume";
+      this._copy.textContent = "Copy from main";
       this._copy.addEventListener("click", () => this._copyMain());
       this.append(this._copy, this._form, this._note);
     }
