@@ -141,6 +141,9 @@
       },
       "polarity": {
         "name": "Polarity (Inverted)"
+      },
+      "connection": {
+        "name": "Connection"
       }
     }
   },

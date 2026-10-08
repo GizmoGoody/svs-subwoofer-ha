@@ -113,6 +113,7 @@ bluetoothctl
 | PEQ1/2/3 | Enable/disable parametric EQ bands |
 | Room Gain Compensation | Enable/disable room gain |
 | Polarity (Inverted) | Normal (+) or inverted (-) polarity |
+| Connection | On while connected over Bluetooth. Turn it on to connect, or off to disconnect until the next command; set a card's tap behavior to toggle it to connect and disconnect with a tap |
 
 ### Buttons
 
