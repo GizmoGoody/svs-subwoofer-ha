@@ -377,6 +377,175 @@
     return results;
   };
 
+  // ---------------------------------------------------------------------
+  // Readability: the text of every control against what is under it, for
+  // every finish and features style, with feature colors from black to
+  // white. Run once in each color scheme (the driver switches it).
+  // ---------------------------------------------------------------------
+  let probe;
+  function rgba(css) {
+    probe ??= document.createElement("canvas").getContext("2d", { willReadFrequently: true });
+    probe.clearRect(0, 0, 1, 1);
+    probe.fillStyle = "rgba(0, 0, 0, 0)";
+    probe.fillStyle = css;
+    probe.fillRect(0, 0, 1, 1);
+    const [r, g, b, a] = probe.getImageData(0, 0, 1, 1).data;
+    return [r, g, b, a / 255];
+  }
+  const over = (top, below) => [0, 1, 2].map((i) => top[i] * top[3] + below[i] * (1 - top[3])).concat(1);
+  function luminance([r, g, b]) {
+    const lin = (v) => ((v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  }
+  const contrast = (a, b) => {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+  const hex = (c) => `#${c.slice(0, 3).map((v) => Math.round(v).toString(16).padStart(2, "0")).join("")}`;
+  // The element and its ancestors, across shadow roots
+  function ancestors(el) {
+    const list = [];
+    for (let n = el; n; n = n.parentNode ?? n.host) if (n.nodeType === 1) list.push(n);
+    return list;
+  }
+  // Colors of a canvas under an element: a grid over its middle
+  function samples(canvas, el) {
+    const c = canvas.getBoundingClientRect(), r = el.getBoundingClientRect();
+    const sx = canvas.width / c.width, sy = canvas.height / c.height;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    const out = [];
+    for (let i = 0; i < 7; i++) {
+      for (let j = 0; j < 3; j++) {
+        const x = (r.left + r.width * (0.2 + 0.1 * i) - c.left) * sx, y = (r.top + r.height * (0.3 + 0.2 * j) - c.top) * sy;
+        const [R, G, B, A] = ctx.getImageData(Math.floor(x), Math.floor(y), 1, 1).data;
+        out.push([R, G, B, A / 255]);
+      }
+    }
+    return out;
+  }
+  // What shows under an element: the first opaque background below it, or
+  // the finish drawn on the card's (or the panel's) canvas
+  function under(el) {
+    const page = rgba(getComputedStyle(document.body).backgroundColor);
+    for (const n of ancestors(el).slice(1)) {
+      if (n.localName === "svs-subwoofer-card" || n.localName === "svs-subwoofer-panel-card") {
+        const box = n.shadowRoot.querySelector(".frame, .panel");
+        if (box.classList.contains("finished") && !box.classList.contains("through")) {
+          return samples(n.shadowRoot.querySelector("canvas"), el).map((s) => over(s, page));
+        }
+        if (n.localName === "svs-subwoofer-panel-card") {
+          const bg = rgba(getComputedStyle(box).backgroundColor);
+          if (bg[3] > 0.99) return [bg];
+        }
+        continue;
+      }
+      const bg = rgba(getComputedStyle(n).backgroundColor);
+      if (bg[3] > 0.99) return [bg];
+    }
+    return [page];
+  }
+  // The lowest contrast of a control's text with what it shows behind it
+  function check(el, label, failures, what) {
+    const style = getComputedStyle(el);
+    const own = rgba(style.backgroundColor);
+    const before = getComputedStyle(el, "::before");
+    const tint = before.content !== "none" ? rgba(before.backgroundColor) : [0, 0, 0, 0];
+    tint[3] *= Number(before.opacity || 1);
+    let worst = Infinity, at;
+    for (const base of under(el)) {
+      const bg = over(tint, own[3] > 0.99 ? own : over(own, base));
+      const fg = over(rgba(style.color), bg);
+      const ratio = contrast(fg, bg);
+      if (ratio < worst) [worst, at] = [ratio, `${hex(fg)} on ${hex(bg)}`];
+    }
+    if (worst < 4.5) failures.push(`${what}: "${label}" ${worst.toFixed(2)}:1 (${at})`);
+  }
+
+  window.svsReadability = async () => {
+    const [first] = subVolumes();
+    const box = stage();
+    box.replaceChildren();
+    const thresholds = [{ below: -30, color: "green" }, { below: -15, color: "yellow" }, { color: "red" }];
+    const features = [
+      { type: "custom:svs-subwoofer-presets", presets_shown: ["LOW", "MEDIUM", "HIGH", "Default"] },
+      { type: "custom:svs-subwoofer-presets", style: "presets_cycle" },
+      { type: "custom:svs-subwoofer-volume", volume_thresholds: thresholds },
+      { type: "custom:svs-subwoofer-standby" },
+    ];
+    const looks = [["none", "match"]];
+    for (const finish of ["black_ash", "black_oak", "gloss_black", "gloss_white", "fabric", "grille"]) {
+      for (const style of ["match", "flat", "inset"]) looks.push([finish, style]);
+    }
+    const cards = [];
+    for (const [finish, style] of looks) {
+      const card = document.createElement("svs-subwoofer-card");
+      card.setConfig({ type: "custom:svs-subwoofer-card", entity: first, name: `${finish} ${style}`, features, finish, features_style: style });
+      card.hass = { ...hass(), callService: () => {} };
+      box.append(card);
+      cards.push([`${finish} · ${style}`, card]);
+    }
+    for (const finish of ["fabric", "gloss_white"]) {
+      for (const style of ["match", "flat", "inset"]) {
+        const panel = document.createElement("svs-subwoofer-panel-card");
+        panel.setConfig({
+          type: "custom:svs-subwoofer-panel-card", entity: first, finish, features_style: style, features: [features[0]],
+          members: [{ entity: first, features: [features[1], features[3]], features_position: "inline" }],
+        });
+        panel.hass = { ...hass(), callService: () => {} };
+        box.append(panel);
+        cards.push([`panel ${finish} · ${style}`, panel]);
+      }
+    }
+    await sleep(2500);
+    const featureTypes = "svs-subwoofer-presets, svs-subwoofer-standby, svs-subwoofer-volume";
+    const allDeep = (root, selector, found = []) => {
+      for (const el of root.querySelectorAll("*")) {
+        if (el.matches(selector)) found.push(el);
+        if (el.shadowRoot) allDeep(el.shadowRoot, selector, found);
+      }
+      return found;
+    };
+    const results = [];
+    // The theme's own feature color first, then black to white
+    for (const color of [null, "#000000", "#ffffff", "#ffeb3b", "#44739e", "#f44336"]) {
+      const failures = [];
+      let checked = 0;
+      for (const [, card] of cards) {
+        for (const feature of allDeep(card.shadowRoot, featureTypes)) {
+          if (color) feature.style.setProperty("--feature-color", color);
+          else feature.style.removeProperty("--feature-color");
+          feature._key = undefined;
+          feature._render?.();
+        }
+      }
+      await sleep(600);
+      for (const [what, card] of cards) {
+        for (const feature of allDeep(card.shadowRoot, featureTypes)) {
+          for (const button of feature.shadowRoot.querySelectorAll("button")) {
+            check(button, button.textContent.trim() || button.title || button.getAttribute("aria-label") || "icon", failures, what);
+            checked++;
+          }
+          // The volume's value callout, shown as while a key is pressed
+          const control = feature.shadowRoot.querySelector(".control[role=slider]");
+          const tooltip = feature.shadowRoot.querySelector(".tooltip");
+          if (control && tooltip) {
+            tooltip.classList.add("visible");
+            check(tooltip, tooltip.textContent, failures, `${what} (value callout)`);
+            tooltip.classList.remove("visible");
+            checked++;
+          }
+        }
+      }
+      results.push({
+        name: `readability: ${color ? `feature color ${color}` : "the theme's feature color"} (${checked} controls)`,
+        ok: failures.length === 0 && checked > 0,
+        detail: failures.length ? `${failures.length} hard to read (contrast below 4.5:1):\n${failures.slice(0, 40).join("\n")}` : (checked ? "" : "nothing was checked"),
+      });
+    }
+    box.replaceChildren();
+    return results;
+  };
+
   // The cards in every finish, for screenshots; returns the area to capture
   window.svsUiGallery = async () => {
     const [first, second] = subVolumes();

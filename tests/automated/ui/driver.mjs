@@ -123,6 +123,11 @@ try {
   for (const scheme of ["light", "dark"]) {
     await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme }] });
     await sleep(600);
+    // Every control's text against what is under it, in this scheme
+    for (const result of await evaluate("window.svsReadability()")) {
+      report.push({ ...result, name: `${scheme}: ${result.name}` });
+    }
+    writeFileSync(join(outDir, "report.json"), JSON.stringify(report, null, 2));
     const rect = await evaluate("window.svsUiGallery()");
     const shot = await send("Page.captureScreenshot", {
       format: "png", captureBeyondViewport: true,
