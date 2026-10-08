@@ -473,9 +473,26 @@ class SvsVolume extends HTMLElement {
         .fill { position: absolute; inset: 0 auto 0 0; background: var(--fill, var(--feature-color)); }
         .tick { position: absolute; top: 25%; bottom: 25%; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--primary-text-color); opacity: .35; }
         .handle { position: absolute; top: 25%; bottom: 25%; width: 4px; margin-left: -10px; border-radius: 2px; background: #fff; box-shadow: 0 0 2px rgba(0, 0, 0, .45); }
+        /* Inset: no bar; the whole range stays visible, and a round loupe of
+           glossy plastic in the volume's color marks the setting */
+        .loupe { display: none; }
+        :host([svs-inset]) .fill, :host([svs-inset]) .handle { display: none; }
+        :host([svs-inset]) .zones i { opacity: .5; }
+        :host([svs-inset]) .loupe {
+          --size: calc(var(--feature-height, 42px) - 6px);
+          display: block; position: absolute; top: 50%; width: var(--size); height: var(--size);
+          left: clamp(calc(var(--size) / 2 + 3px), var(--at), calc(100% - var(--size) / 2 - 3px));
+          transform: translate(-50%, -50%); border-radius: 50%;
+          background:
+            radial-gradient(70% 55% at 34% 26%, rgba(255,255,255,.85), rgba(255,255,255,0) 60%),
+            radial-gradient(circle at 50% 120%, rgba(255,255,255,.35), rgba(255,255,255,0) 45%),
+            radial-gradient(circle, rgba(0,0,0,0) 58%, rgba(0,0,0,.28)),
+            var(--loupe);
+          box-shadow: 0 2px 4px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.7), inset 0 -2px 3px rgba(0,0,0,.35);
+        }
       </style>
       <div class="control" role="slider" tabindex="0" aria-label="Volume">
-        <div class="zones"></div><div class="fill"></div><div class="ticks"></div><div class="handle"></div>
+        <div class="zones"></div><div class="fill"></div><div class="ticks"></div><div class="handle"></div><div class="loupe"></div>
       </div>`;
     this._control = this.shadowRoot.querySelector(".control");
     this._control.addEventListener("pointerdown", (ev) => this._down(ev));
@@ -570,6 +587,11 @@ class SvsVolume extends HTMLElement {
     const handle = c.querySelector(".handle");
     handle.style.left = `${pct}%`;
     handle.style.display = known ? "" : "none";
+    // The loupe: the volume's threshold color, or plain glossy plastic
+    // (white on a white finish, black on the others) without thresholds
+    c.style.setProperty("--at", `${pct}%`);
+    c.style.setProperty("--loupe", color ? cssColor(color) : "var(--svs-loupe-plain, #141518)");
+    c.querySelector(".loupe").style.visibility = known ? "" : "hidden";
   }
 
   _valueAt(ev) {
@@ -1191,6 +1213,7 @@ class SvsCard extends HTMLElement {
         .tile.dark { --primary-text-color: rgba(255, 255, 255, .95); --secondary-text-color: rgba(235, 235, 240, .7); text-shadow: 0 1px 2px rgba(0, 0, 0, .8); }
         .tile.light { --primary-text-color: rgba(0, 0, 0, .85); --secondary-text-color: rgba(40, 40, 48, .62); }
         /* Flat and Inset: no finish shows through a control */
+        .tile.light { --svs-loupe-plain: #f4f5f7; }
         .tile.dark.solid { --svs-feature-backing: ${BACKING.dark}; }
         .tile.light.solid { --svs-feature-backing: ${BACKING.light}; }
         /* With the finish on the expander card, this card is see-through */
@@ -1840,7 +1863,7 @@ class SvsPanelCard extends HTMLElement {
           box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16), inset 0 -1px 0 rgba(0, 0, 0, .4);
         }
         .dark { --primary-text-color: rgba(255, 255, 255, .95); --divider-color: rgba(255, 255, 255, .14); }
-        .light { --primary-text-color: rgba(0, 0, 0, .85); --divider-color: rgba(0, 0, 0, .12); }
+        .light { --primary-text-color: rgba(0, 0, 0, .85); --divider-color: rgba(0, 0, 0, .12); --svs-loupe-plain: #f4f5f7; }
         .members { display: grid; }
         .panel:not(.open) .members { display: none; }
       </style>
