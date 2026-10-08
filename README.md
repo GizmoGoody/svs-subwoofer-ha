@@ -151,7 +151,7 @@ These add controls to any tile card whose entity belongs to an SVS subwoofer or 
 | Feature | What it does |
 |---------|--------------|
 | **SVS Subwoofer presets** | One button per preset, lit in that preset's color while it is active. Selecting a button always loads that preset, even the one that is already shown. Choose **A button for each preset**, or **One button that loads the next preset** (each tap moves to the next). Presets appear in the subwoofer's slot order until you reorder them; you can also choose which appear, and each preset's color and icon. Presets named LOW, MEDIUM, and HIGH start as green, yellow, and red, with volume icons. |
-| **SVS Subwoofer volume** | A volume slider. Turn on **Volume thresholds** to split it into three ranges, each with its own color: the track shows the ranges faintly, and the filled part takes the color of the range it ends in. If the two volumes are entered the other way round, the editor swaps them back into order and moves the quietest and loudest colors with them. |
+| **SVS Subwoofer volume** | A volume slider. **Slider from** and **Slider to** set its range (the full −60 to 0 dB by default), so the volumes you actually use get the whole width of the slider; the driver's size follows the same range. Turn on **Volume thresholds** to split it into three ranges, each with its own color: the track shows the ranges faintly, and the filled part takes the color of the range it ends in. If the two volumes are entered the other way round, the editor swaps them back into order and moves the quietest and loudest colors with them. |
 | **SVS Subwoofer standby mode** | The standby mode as a row of buttons. |
 
 All three take their height, corners, and colors from your theme.
@@ -162,7 +162,7 @@ Edit a dashboard, select **Add card**, and search for **SVS Subwoofer**. The car
 
 - **Finish**: None (your theme's own card), Premium Black Ash, Black Oak Real Wood Veneer, Piano Gloss Black, or Piano Gloss White. On a finish, every SVS feature control sits on a solid backing, so the finish shows around the controls but never through them.
 - **Randomize grain** (the wood finishes) draws a new board, running vertically or horizontally at a new grain size. **Randomize reflections** (the gloss finishes) moves the reflections.
-- **Finish covers**: **This card**, or **The expander card around it**. In a `custom:expander-card`, choose the second on the header card and on each card inside: the header draws the finish across the whole expander card, and the cards inside let it show through, so they read as one card.
+- **Finish extent**: **Card**, or **Container**. In a `custom:expander-card`, choose **Container** on the header card and on each card inside: the header draws the finish across the whole expander card, and the cards inside let it show through, so they read as one card.
 - **Bluetooth badge** (a subwoofer's card): show the connection on the driver, and tap it to connect or disconnect (the default); show it only when the subwoofer is not connected; or hide it. A subwoofer group has no connection of its own, so its card has no badge.
 - **Shake when the volume or preset changes**: the driver shakes while the volume slider moves and briefly when a preset loads, harder at a higher volume. It stays still for anyone who has reduced motion turned on.
 
