@@ -1195,6 +1195,11 @@ class SvsCard extends HTMLElement {
           filter: drop-shadow(0 0 1px rgba(0, 0, 0, .9)) drop-shadow(0 0 2px rgba(0, 0, 0, .6));
         }
         .standby-badge.on { display: grid; }
+        /* On a light finish, the badges get a light halo instead */
+        .light-finish .badge, .light-finish .standby-badge {
+          filter: drop-shadow(0 0 1px rgba(255, 255, 255, .95)) drop-shadow(0 0 2px rgba(255, 255, 255, .7));
+        }
+        .light-finish .standby-badge { color: rgba(0, 0, 0, .85); }
       </style>
       <div class="frame">
         <canvas></canvas>
@@ -1536,6 +1541,7 @@ class SvsCard extends HTMLElement {
     const through = embedded || onExpander;
     this._frame.classList.toggle("finished", !!tone);
     this._frame.classList.toggle("through", through);
+    this._frame.classList.toggle("light-finish", tone === "light");
     if (this._tile) {
       this._tile.classList.toggle("dark", tone === "dark");
       this._tile.classList.toggle("light", tone === "light");
