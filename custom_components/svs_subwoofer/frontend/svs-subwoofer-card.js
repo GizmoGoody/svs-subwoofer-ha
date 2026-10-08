@@ -465,7 +465,21 @@ class SvsVolume extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this.shadowRoot.innerHTML = `
       <style>${FEATURE_CSS}
+        :host { position: relative; }
         .control { cursor: pointer; touch-action: none; outline: none; user-select: none; -webkit-user-select: none; }
+        /* The value callout above the slider while it moves, as on Home
+           Assistant's own sliders; outside the control, which clips */
+        .tooltip {
+          pointer-events: none; user-select: none; position: absolute; z-index: 3;
+          top: -4px; left: calc(min(max(var(--svs-tip, 0) * 100%, 0%), 100%));
+          transform: translate3d(-50%, -100%, 0);
+          background-color: var(--clear-background-color); color: var(--primary-text-color);
+          font-size: var(--control-slider-tooltip-font-size, var(--ha-font-size-m, 14px));
+          border-radius: var(--ha-border-radius-lg, 12px); padding: .2em .4em;
+          opacity: 0; white-space: nowrap; box-shadow: 0 2px 5px rgba(0, 0, 0, .2);
+          transition: opacity 180ms ease-in-out, left 180ms ease-in-out;
+        }
+        .tooltip.visible { opacity: 1; }
         .control:focus-visible { box-shadow: 0 0 0 2px var(--fill, var(--feature-color)); }
         .zones { position: absolute; inset: 0; display: flex; }
         .zones i { display: block; height: 100%; opacity: .2; }
@@ -503,8 +517,10 @@ class SvsVolume extends HTMLElement {
       </style>
       <div class="control" role="slider" tabindex="0" aria-label="Volume">
         <div class="zones"></div><div class="fill"></div><div class="ticks"></div><div class="handle"></div><div class="loupe"></div>
-      </div>`;
+      </div>
+      <span class="tooltip" aria-hidden="true"></span>`;
     this._control = this.shadowRoot.querySelector(".control");
+    this._tooltip = this.shadowRoot.querySelector(".tooltip");
     this._control.addEventListener("pointerdown", (ev) => this._down(ev));
     this._control.addEventListener("pointermove", (ev) => this._move(ev));
     this._control.addEventListener("pointerup", (ev) => this._up(ev));
@@ -603,6 +619,11 @@ class SvsVolume extends HTMLElement {
     // The loupe shows the color it is on, at full strength: the volume's
     // threshold color, or the feature color without thresholds
     c.style.setProperty("--at", `${pct}%`);
+    this.style.setProperty("--svs-tip", String(pct / 100));
+    if (known) {
+      const unit = stateObj?.attributes.unit_of_measurement;
+      this._tooltip.textContent = unit ? `${value} ${unit}` : String(value);
+    }
     c.style.setProperty("--loupe", color ? cssColor(color) : "var(--feature-color)");
     c.querySelector(".loupe").style.visibility = known ? "" : "hidden";
   }
@@ -638,6 +659,13 @@ class SvsVolume extends HTMLElement {
     this._moved(false, value);
   }
 
+  // Shown while the slider moves; after keys, it stays a moment
+  _showTooltip(visible, delay = 0) {
+    clearTimeout(this._tooltipTimer);
+    if (visible || !delay) this._tooltip.classList.toggle("visible", visible);
+    else this._tooltipTimer = setTimeout(() => this._tooltip.classList.remove("visible"), delay);
+  }
+
   _keyDown(ev) {
     const { min, max, step } = this._limits;
     const delta = { ArrowRight: step, ArrowUp: step, ArrowLeft: -step, ArrowDown: -step, PageUp: 5 * step, PageDown: -5 * step }[ev.key];
@@ -658,12 +686,15 @@ class SvsVolume extends HTMLElement {
     clearTimeout(this._keyTimer);
     this._send(value);
     this._moved(false, value);
+    this._tooltip.classList.add("visible");
+    this._showTooltip(false, 500);
   }
 
   // Tells the SVS card the slider is moving, so its driver can shake
   _moved(active, value = this._dragging) {
     this._key = undefined;
     this._render();
+    this._showTooltip(active);
     const { min, max } = this._limits;
     const color = this._ranges.length ? rangeColor(this._ranges, value) : undefined;
     fire(this, "svs-volume-input", { active, level: (value - min) / (max - min), color });
@@ -1252,10 +1283,14 @@ class SvsCard extends HTMLElement {
       <style>
         :host { display: block; height: 100%; }
         .frame {
-          position: relative; height: 100%; box-sizing: border-box; overflow: hidden; isolation: isolate;
+          position: relative; height: 100%; box-sizing: border-box; isolation: isolate;
           /* Exactly the tile card's own corners (ha-card), from the theme */
           border-radius: var(--ha-card-border-radius, var(--ha-border-radius-lg));
         }
+        /* Only the finish layers are clipped to the rounded outline; the tile
+           card is not, so its callouts (such as a slider's value tooltip) can
+           extend past the card's edge, as on a plain tile card */
+        .clip { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; }
         canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: none; pointer-events: none; }
         .finished canvas { display: block; }
         .finished::after {
@@ -1322,8 +1357,10 @@ class SvsCard extends HTMLElement {
         .light-finish .standby-badge { color: rgba(0, 0, 0, .85); }
       </style>
       <div class="frame">
-        <canvas></canvas>
-        <div id="areas"></div>
+        <div class="clip">
+          <canvas></canvas>
+          <div id="areas"></div>
+        </div>
         <span class="standby-badge" aria-hidden="true"></span>
         <span class="badge" role="img"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="${BT_OFF}"/></svg></span>
       </div>`;
@@ -1907,7 +1944,7 @@ class SvsPanelCard extends HTMLElement {
       <style>
         :host { display: block; }
         .panel {
-          position: relative; overflow: hidden; isolation: isolate; box-sizing: border-box;
+          position: relative; isolation: isolate; box-sizing: border-box;
           border-radius: var(--ha-card-border-radius, var(--ha-border-radius-lg));
           background: var(--ha-card-background, var(--card-background-color, #fff));
           -webkit-backdrop-filter: var(--ha-card-backdrop-filter, none); backdrop-filter: var(--ha-card-backdrop-filter, none);
@@ -1915,7 +1952,10 @@ class SvsPanelCard extends HTMLElement {
           box-shadow: var(--ha-card-box-shadow, none);
           color: var(--primary-text-color);
         }
-        canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: none; pointer-events: none; z-index: -1; }
+        canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: none; pointer-events: none; }
+        /* Only the finish is clipped to the outline, so the rows' callouts can
+           extend past the panel's edge */
+        .clip { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; z-index: -1; }
         .finished { -webkit-backdrop-filter: none; backdrop-filter: none; border-color: transparent; }
         .finished canvas { display: block; }
         .finished::after {
@@ -1928,7 +1968,7 @@ class SvsPanelCard extends HTMLElement {
         .panel:not(.open) .members { display: none; }
       </style>
       <div class="panel">
-        <canvas></canvas>
+        <div class="clip"><canvas></canvas></div>
         <div class="header"></div>
         <div class="members"></div>
       </div>`;
