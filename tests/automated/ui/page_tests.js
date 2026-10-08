@@ -159,19 +159,32 @@
       expectEqual(saved.at(-1).features, [{ type: "custom:svs-subwoofer-volume" }], "saved features");
     });
 
-    await test("panel editor: numbered tabs, duplicate, and edits that stay", async () => {
+    await test("panel editor: the card above numbered tabs, duplicate, and edits that stay", async () => {
       if (!second) throw new Error("two subwoofers are needed");
       const { el, saved } = hosted("svs-subwoofer-panel-card-editor");
+      const thresholds = [{ below: -20, color: "green" }, { color: "red" }];
       el.setConfig({
         type: "custom:svs-subwoofer-panel-card", entity: groupVolume() ?? first,
+        features: [{ type: "custom:svs-subwoofer-volume", min: -50, max: 0, volume_thresholds: thresholds }],
         members: [{ entity: first, state_content: ["state", "preset", "standby_mode"], features: [{ type: "custom:svs-subwoofer-volume" }], features_position: "inline" }],
       });
       const tabs = () => [...el.shadowRoot.querySelectorAll(".tab")];
-      await until(() => tabs().length === 2, "the tabs");
-      expectEqual(tabs().map((t) => t.textContent), ["Card", "1"], "tab labels");
+      await until(() => tabs().length === 1, "the tabs");
+      expectEqual(tabs().map((t) => t.textContent), ["1"], "tab labels");
+      const heading = el.shadowRoot.querySelector("h3");
+      if (!heading?.textContent.includes("Subwoofers")) throw new Error(`no heading above the tabs (got "${heading?.textContent}")`);
+      // The card's editor stands above the heading, not on a tab
+      const cardAbove = el.shadowRoot.querySelector("#card svs-subwoofer-card-editor");
+      if (!cardAbove) throw new Error("the card's editor is not above the tabs");
+      if (!(cardAbove.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING)) throw new Error("the card's editor is not before the heading");
 
-      // A subwoofer's tab: state content and features stay as edited
-      tabs()[1].click();
+      // A subwoofer's tab (the first one is open): copy the card's volume settings
+      const copy = await until(() => [...el.shadowRoot.querySelectorAll("ha-button")].find((b) => b.textContent.includes("volume settings")), "the copy button");
+      copy.click();
+      await until(() => saved.length, "a save");
+      expectEqual(saved.at(-1).members[0].features, [{ type: "custom:svs-subwoofer-volume", min: -50, max: 0, volume_thresholds: thresholds }], "the copied volume feature");
+
+      // State content and features stay as edited
       const tile = await tileEditorIn(el);
       setFormValue(mainForm(tile), { state_content: ["state", "preset"] });
       await until(() => same(tile._config?.state_content, ["state", "preset"]), "the row's form to show two state contents");
@@ -185,14 +198,12 @@
       if (!duplicate) throw new Error("no Duplicate button");
       duplicate.click();
       await until(() => tabs().length === 3, "a third tab");
-      expectEqual(tabs().map((t) => t.textContent), ["Card", "1", "2"], "tab labels after duplicating");
+      expectEqual(tabs().map((t) => t.textContent), ["1", "2"], "tab labels after duplicating");
       expectEqual(saved.at(-1).members.map((m) => m.entity), [first, second], "the rows' subwoofers");
       expectEqual(saved.at(-1).members[1].state_content, ["state", "preset"], "the copy's state content");
 
-      // The Card tab: its edits stay, and the rows are kept
-      tabs()[0].click();
-      const cardEditor = await until(() => el.shadowRoot.querySelector("svs-subwoofer-card-editor"), "the card's editor");
-      const cardTile = await tileEditorIn(cardEditor);
+      // The card: its edits stay, and the rows are kept
+      const cardTile = await tileEditorIn(cardAbove);
       setFormValue(mainForm(cardTile), { state_content: ["state"] });
       await until(() => same(cardTile._config?.state_content, ["state"]), "the card's form to show one state content");
       expectEqual(saved.at(-1).state_content, ["state"], "saved card state content");
@@ -238,6 +249,57 @@
       expectEqual(saved.at(-1).presets_shown, reversed, "saved order");
     });
 
+    await test("presets editor: Default is left out, with no color or icon of its own", async () => {
+      const { el } = hosted("svs-subwoofer-presets-editor", { context: { entity_id: first } });
+      el.setConfig({ type: "custom:svs-subwoofer-presets" });
+      const form = await until(() => el.querySelector("ha-form")?.data?.presets_shown?.length && el.querySelector("ha-form"), "the form");
+      const options = form.schema.find((s) => s.name === "presets_shown").selector.select.options;
+      if (!options.includes("Default")) throw new Error(`the fake subwoofer has no Default preset (options ${JSON.stringify(options)})`);
+      if (form.data.presets_shown.includes("Default")) throw new Error("Default is shown by default");
+      const names = JSON.stringify(form.schema);
+      if (names.includes("color_Default") || names.includes("icon_Default")) throw new Error("Default has a color or icon field");
+    });
+
+    await test("entity pickers offer only SVS Subwoofer volumes", async () => {
+      const entityField = (schema) => {
+        for (const item of schema ?? []) {
+          if (item.name === "entity") return item;
+          const inner = entityField(item.schema);
+          if (inner) return inner;
+        }
+        return undefined;
+      };
+      const offered = (tile) => entityField(mainForm(tile).schema)?.selector?.entity?.include_entities;
+      const { el } = hosted("svs-subwoofer-card-editor");
+      el.setConfig({ type: "custom:svs-subwoofer-card", entity: first });
+      const tile = await tileEditorIn(el);
+      const cardList = await until(() => offered(tile), "the card's entity list");
+      expectEqual(cardList, [...subVolumes(), ...(groupVolume() ? [groupVolume()] : [])].sort(), "the card's entities");
+
+      stage().replaceChildren();
+      const panel = hosted("svs-subwoofer-panel-card-editor").el;
+      panel.setConfig({ type: "custom:svs-subwoofer-panel-card", entity: groupVolume() ?? first, members: [{ entity: first }] });
+      const row = await tileEditorIn(panel);
+      expectEqual(await until(() => offered(row), "the row's entity list"), subVolumes(), "a row's entities");
+    });
+
+    await test("standby: the selected mode's text is readable from the first render", async () => {
+      const card = document.createElement("svs-subwoofer-card");
+      card.setConfig({
+        type: "custom:svs-subwoofer-card", entity: first, finish: "gloss_white", features_style: "match",
+        features: [{ type: "custom:svs-subwoofer-standby" }],
+      });
+      card.hass = hass();
+      card.style.setProperty("--feature-color", "#ffffff");
+      stage().append(card);
+      const standby = await until(() => findDeep(card.shadowRoot, "svs-subwoofer-standby")?.style.getPropertyValue("--svs-on-color") && findDeep(card.shadowRoot, "svs-subwoofer-standby"), "the standby text color");
+      const color = standby.style.getPropertyValue("--svs-on-color");
+      const featureColor = getComputedStyle(standby).getPropertyValue("--feature-color").trim();
+      if (/^#f/i.test(featureColor) && color === "#fff") throw new Error(`white text on the feature color ${featureColor}`);
+      const labels = [...(standby.shadowRoot ?? standby).querySelectorAll("*")].map((e) => e.textContent).join("|");
+      if (/Auto On/.test(labels)) throw new Error("the card says Auto On, not Auto");
+    });
+
     return results;
   };
 
@@ -265,6 +327,15 @@
       card.hass = hass();
       box.append(card);
     }
+    // The plain loupe (no thresholds), and no ring around the driver
+    const plain = document.createElement("svs-subwoofer-card");
+    plain.setConfig({
+      type: "custom:svs-subwoofer-card", entity: first, name: "black_oak · inset · no thresholds, no ring",
+      features: [{ type: "custom:svs-subwoofer-volume" }], features_position: "inline",
+      finish: "black_oak", features_style: "inset", driver_ring: false,
+    });
+    plain.hass = hass();
+    box.append(plain);
     if (second) {
       const panel = document.createElement("svs-subwoofer-panel-card");
       panel.setConfig({
