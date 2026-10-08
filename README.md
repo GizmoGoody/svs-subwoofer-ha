@@ -163,6 +163,7 @@ Edit a dashboard, select **Add card**, and search for **SVS Subwoofer**. The car
 - **Finish**: None (your theme's own card), Premium Black Ash, Black Oak Real Wood Veneer, Piano Gloss Black, or Piano Gloss White. On a finish, every SVS feature control sits on a solid backing, so the finish shows around the controls but never through them.
 - **Randomize grain** (the wood finishes) draws a new board, running vertically or horizontally at a new grain size. **Randomize reflections** (the gloss finishes) moves the reflections.
 - **Finish extent**: **Card**, or **Container**. In a `custom:expander-card`, choose **Container** on the header card and on each card inside: the header draws the finish across the whole expander card, and the cards inside let it show through, so they read as one card.
+- **Features style** (with a finish): the controls sit on the finish (**Match style**), on a flat patch of the finish's base color without grain or reflections (**Flat**), or in a channel pressed into the panel (**Inset**). With Flat and Inset, the finish still shows between the preset buttons. The same option, with the same values, as on The Lampster card.
 - **Bluetooth badge** (a subwoofer's card): show the connection on the driver, and tap it to connect or disconnect (the default); show it only when the subwoofer is not connected; or hide it. A subwoofer group has no connection of its own, so its card has no badge.
 - **Shake when the volume or preset changes**: the driver shakes while the volume slider moves and briefly when a preset loads, harder at a higher volume. It stays still for anyone who has reduced motion turned on.
 
@@ -172,6 +173,7 @@ In place of the tile card's icon, the card shows a subwoofer driver. Its size fo
 type: custom:svs-subwoofer-card
 entity: number.subwoofer_both_volume
 finish: black_ash        # none, black_ash, black_oak, gloss_black, gloss_white
+features_style: inset     # match, flat or inset
 pattern: 4242            # the grain or reflection pattern (Randomize sets it)
 vibration: true
 state_content:
