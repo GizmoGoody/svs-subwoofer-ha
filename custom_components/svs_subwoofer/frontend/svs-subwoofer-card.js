@@ -45,6 +45,24 @@ const HA_COLORS = [
 ];
 // Named colors light enough to need dark text on top
 const LIGHT_COLORS = ["yellow", "amber", "lime", "light-green", "white", "light-grey"];
+/**
+ * Text that reads on a filled button: dark on a light color, white on a dark
+ * one. The color is the one the button actually shows (a theme variable such
+ * as the feature color, resolved by the browser).
+ */
+let colorProbe;
+function textOn(el, cssValue) {
+  const resolved = cssValue.startsWith("var(") ? getComputedStyle(el).getPropertyValue(cssValue.slice(4, -1).split(",")[0].trim()).trim() : cssValue;
+  if (!resolved) return "#fff";
+  colorProbe ??= document.createElement("canvas").getContext("2d");
+  colorProbe.fillStyle = "#000";
+  colorProbe.fillStyle = resolved;
+  const [r, g, b] = (colorProbe.fillStyle.match(/[\d.]+/g) ?? [0, 0, 0]).map(Number);
+  const hex = colorProbe.fillStyle.startsWith("#") ? colorProbe.fillStyle.slice(1).match(/../g).map((h) => parseInt(h, 16)) : [r, g, b];
+  const luma = (0.299 * hex[0] + 0.587 * hex[1] + 0.114 * hex[2]) / 255;
+  return luma > 0.6 ? "rgba(0, 0, 0, .85)" : "#fff";
+}
+
 const cssColor = (color) => (HA_COLORS.includes(color) ? `var(--${color}-color)` : color);
 const isLight = (color) => LIGHT_COLORS.includes(color) || /^#(f|e)/i.test(color || "");
 
@@ -240,6 +258,8 @@ class SvsPresetButtons extends HTMLElement {
       if (look.color) {
         button.style.setProperty("--c", cssColor(look.color));
         if (isLight(look.color)) button.style.setProperty("--svs-on-color", "rgba(0, 0, 0, .85)");
+      } else {
+        button.style.setProperty("--svs-on-color", textOn(this, "var(--feature-color)"));
       }
       if (look.icon) {
         const icon = document.createElement("ha-icon");
@@ -718,12 +738,9 @@ class SvsStandby extends HTMLElement {
     super();
     this.attachShadow({ mode: "open" });
     // The same buttons as the presets, in the feature color; the selected
-    // mode's text takes the card's background color so it reads on any
-    // feature color
+    // mode's text is dark or white to read on that color
     this.shadowRoot.innerHTML = `
-      <style>${FEATURE_CSS}${BUTTON_ROW_CSS}
-        :host { --svs-on-color: var(--svs-feature-backing, var(--card-background-color, #fff)); }
-      </style>
+      <style>${FEATURE_CSS}${BUTTON_ROW_CSS}</style>
       <div class="row" role="group" aria-label="Standby mode"></div>`;
     this._row = this.shadowRoot.querySelector(".row");
     keepTaps(this);
@@ -758,6 +775,7 @@ class SvsStandby extends HTMLElement {
     if (key === this._key) return;
     this._key = key;
     this._row.classList.toggle("disabled", unavailable(stateObj));
+    this.style.setProperty("--svs-on-color", textOn(this, "var(--feature-color)"));
     this._row.replaceChildren(...options.map((option) => {
       const button = document.createElement("button");
       button.type = "button";
