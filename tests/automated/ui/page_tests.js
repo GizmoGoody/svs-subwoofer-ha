@@ -276,7 +276,7 @@
       row.append(el);
       el.setConfig({ type: "custom:svs-subwoofer-volume", max: -5 });
       const copy = await until(() => !el.querySelector("ha-button")?.hidden && el.querySelector("ha-button"), "the copy button");
-      expectEqual(copy.textContent, "Copy the main subwoofer's Volume", "the copy button's label");
+      expectEqual(copy.textContent, "Copy from main", "the copy button's label");
       copy.click();
       await until(() => saved.length, "a save");
       expectEqual(saved.at(-1), main, "the copied settings");
