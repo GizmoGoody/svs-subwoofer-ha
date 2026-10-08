@@ -195,7 +195,7 @@ const BUTTON_ROW_CSS = `
     flex: 1 1 0; min-width: 0; height: 100%; padding: 0 4px; border: 0; cursor: pointer;
     position: relative; overflow: hidden; display: grid; place-items: center;
     border-radius: var(--feature-border-radius, 12px);
-    background: var(--svs-feature-backing, transparent);
+    background: var(--svs-feature-backing, var(--svs-feature-scrim, transparent));
     color: var(--svs-text, var(--primary-text-color)); font: inherit; font-size: var(--ha-font-size-s, 12px); font-weight: 500;
   }
   button::before { content: ""; position: absolute; inset: 0; background: var(--c, var(--feature-color)); opacity: .2; transition: opacity 180ms ease-in-out; }
@@ -214,7 +214,7 @@ const FEATURE_CSS = `
   .control {
     position: relative; height: var(--feature-height, 42px);
     border-radius: var(--feature-border-radius, 12px); overflow: hidden;
-    background: var(--svs-feature-backing, transparent);
+    background: var(--svs-feature-backing, var(--svs-feature-scrim, transparent));
   }
   .tint { position: absolute; inset: 0; background: var(--c, var(--feature-color)); opacity: .2; pointer-events: none; }
   [disabled], .disabled { opacity: .5; pointer-events: none; }
@@ -1316,10 +1316,13 @@ class SvsCard extends HTMLElement {
         .tile.dark {
           --primary-text-color: rgba(255, 255, 255, .95); --secondary-text-color: rgba(235, 235, 240, .7);
           --svs-text: rgba(255, 255, 255, .95); --svs-tip-background: #2b2c30; text-shadow: 0 1px 2px rgba(0, 0, 0, .8);
+          /* Match: the finish shows through the controls, dimmed enough for their text */
+          --svs-feature-scrim: rgba(0, 0, 0, .45);
         }
         .tile.light {
           --primary-text-color: rgba(0, 0, 0, .85); --secondary-text-color: rgba(40, 40, 48, .62);
           --svs-text: rgba(0, 0, 0, .85); --svs-tip-background: #f6f7f9;
+          --svs-feature-scrim: rgba(255, 255, 255, .45);
         }
         /* Flat and Inset: no finish shows through a control */
         .tile.dark.solid { --svs-feature-backing: ${BACKING.dark}; }
