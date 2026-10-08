@@ -465,7 +465,7 @@ class SvsVolume extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this.shadowRoot.innerHTML = `
       <style>${FEATURE_CSS}
-        .control { cursor: pointer; touch-action: none; outline: none; }
+        .control { cursor: pointer; touch-action: none; outline: none; user-select: none; -webkit-user-select: none; }
         .control:focus-visible { box-shadow: 0 0 0 2px var(--fill, var(--feature-color)); }
         .zones { position: absolute; inset: 0; display: flex; }
         .zones i { display: block; height: 100%; opacity: .2; }
@@ -473,22 +473,32 @@ class SvsVolume extends HTMLElement {
         .fill { position: absolute; inset: 0 auto 0 0; background: var(--fill, var(--feature-color)); }
         .tick { position: absolute; top: 25%; bottom: 25%; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--primary-text-color); opacity: .35; }
         .handle { position: absolute; top: 25%; bottom: 25%; width: 4px; margin-left: -10px; border-radius: 2px; background: #fff; box-shadow: 0 0 2px rgba(0, 0, 0, .45); }
-        /* Inset: no bar; the whole range stays visible, and a round loupe of
-           glossy plastic in the volume's color marks the setting */
+        /* Inset: no bar, so the whole range stays visible. A round loupe in a
+           beveled bezel of the subwoofer's finish (--svs-bezel, set by the
+           card) magnifies the color the volume is set at, as on The Lampster
+           card's color temperature slider. */
         .loupe { display: none; }
         :host([svs-inset]) .fill, :host([svs-inset]) .handle { display: none; }
         :host([svs-inset]) .zones i { opacity: .5; }
         :host([svs-inset]) .loupe {
-          --size: calc(var(--feature-height, 42px) - 6px);
+          --size: calc(var(--feature-height, 42px) - 4px);
+          --bezel: var(--svs-bezel, var(--card-background-color, #c3c8cc));
           display: block; position: absolute; top: 50%; width: var(--size); height: var(--size);
-          left: clamp(calc(var(--size) / 2 + 3px), var(--at), calc(100% - var(--size) / 2 - 3px));
-          transform: translate(-50%, -50%); border-radius: 50%;
+          left: clamp(calc(var(--size) / 2 + 2px), var(--at), calc(100% - var(--size) / 2 - 2px));
+          transform: translate(-50%, -50%); border-radius: 50%; pointer-events: none;
+          background: conic-gradient(from 210deg,
+            color-mix(in srgb, var(--bezel), #fff 45%), color-mix(in srgb, var(--bezel), #000 45%) 25%,
+            color-mix(in srgb, var(--bezel), #fff 20%) 45%, color-mix(in srgb, var(--bezel), #000 50%) 65%,
+            color-mix(in srgb, var(--bezel), #fff 45%) 85%, var(--bezel));
+          box-shadow: 0 0 3px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.6), inset 0 -1px 0 rgba(0,0,0,.35);
+        }
+        :host([svs-inset]) .loupe::after {
+          content: ""; position: absolute; inset: 4px; border-radius: 50%;
           background:
-            radial-gradient(70% 55% at 34% 26%, rgba(255,255,255,.85), rgba(255,255,255,0) 60%),
-            radial-gradient(circle at 50% 120%, rgba(255,255,255,.35), rgba(255,255,255,0) 45%),
-            radial-gradient(circle, rgba(0,0,0,0) 58%, rgba(0,0,0,.28)),
+            radial-gradient(70% 55% at 32% 25%, rgba(255,255,255,.75), rgba(255,255,255,0) 60%),
+            radial-gradient(circle, rgba(0,0,0,0) 60%, rgba(0,0,0,.18)),
             var(--loupe);
-          box-shadow: 0 2px 4px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.7), inset 0 -2px 3px rgba(0,0,0,.35);
+          box-shadow: inset 0 0 3px rgba(0,0,0,.5);
         }
       </style>
       <div class="control" role="slider" tabindex="0" aria-label="Volume">
@@ -498,7 +508,10 @@ class SvsVolume extends HTMLElement {
     this._control.addEventListener("pointerdown", (ev) => this._down(ev));
     this._control.addEventListener("pointermove", (ev) => this._move(ev));
     this._control.addEventListener("pointerup", (ev) => this._up(ev));
-    this._control.addEventListener("pointercancel", (ev) => this._up(ev));
+    // A cancelled drag reports no position (0), which is the slider's left
+    // end: it ends at the last position the drag reached instead
+    this._control.addEventListener("pointercancel", () => this._up());
+    this._control.addEventListener("lostpointercapture", () => this._up());
     this._control.addEventListener("keydown", (ev) => this._key(ev));
     this._control.addEventListener("keyup", () => this._keyUp());
     keepTaps(this);
@@ -587,10 +600,10 @@ class SvsVolume extends HTMLElement {
     const handle = c.querySelector(".handle");
     handle.style.left = `${pct}%`;
     handle.style.display = known ? "" : "none";
-    // The loupe: the volume's threshold color, or plain glossy plastic
-    // (white on a white finish, black on the others) without thresholds
+    // The loupe shows the color it is on, at full strength: the volume's
+    // threshold color, or the feature color without thresholds
     c.style.setProperty("--at", `${pct}%`);
-    c.style.setProperty("--loupe", color ? cssColor(color) : "var(--svs-loupe-plain, #141518)");
+    c.style.setProperty("--loupe", color ? cssColor(color) : "var(--feature-color)");
     c.querySelector(".loupe").style.visibility = known ? "" : "hidden";
   }
 
@@ -603,6 +616,9 @@ class SvsVolume extends HTMLElement {
 
   _down(ev) {
     ev.stopPropagation();
+    // No text selection, and no native drag of one, which would cancel this drag
+    ev.preventDefault();
+    this._control.focus({ preventScroll: true });
     this._control.setPointerCapture(ev.pointerId);
     this._dragging = this._valueAt(ev);
     this._moved(true);
@@ -616,7 +632,7 @@ class SvsVolume extends HTMLElement {
 
   _up(ev) {
     if (this._dragging === undefined) return;
-    const value = this._valueAt(ev);
+    const value = ev ? this._valueAt(ev) : this._dragging;
     this._dragging = undefined;
     this._send(value);
     this._moved(false, value);
@@ -666,6 +682,10 @@ class SvsVolume extends HTMLElement {
 }
 
 class SvsVolumeEditor extends HTMLElement {
+  connectedCallback() {
+    if (this._form) this._renderCopy();
+  }
+
   set hass(hass) {
     this._hass = hass;
     if (this._form) this._form.hass = hass;
@@ -689,8 +709,12 @@ class SvsVolumeEditor extends HTMLElement {
       this._note = document.createElement("div");
       this._note.className = "note";
       this._note.setAttribute("role", "status");
-      this.append(this._form, this._note);
+      this._copy = document.createElement("ha-button");
+      this._copy.textContent = "Copy the main subwoofer's Volume";
+      this._copy.addEventListener("click", () => this._copyMain());
+      this.append(this._copy, this._form, this._note);
     }
+    this._renderCopy();
     if (this._hass) this._form.hass = this._hass;
     const ranges = colorRanges(this._config);
     const on = ranges.length > 0;
@@ -729,6 +753,35 @@ class SvsVolumeEditor extends HTMLElement {
         color_3: ranges[2]?.color,
       }
       : { ...range, colored: false };
+  }
+
+  /**
+   * The main subwoofer's volume settings, when this editor is in a row of the
+   * panel card: the row's tile editor (an ancestor, across shadow roots)
+   * provides them as svsMainVolume.
+   */
+  _mainVolume() {
+    for (let n = this.parentNode ?? this.getRootNode()?.host; n; n = n.parentNode ?? n.host) {
+      if (typeof n.svsMainVolume === "function") return { source: true, volume: n.svsMainVolume() };
+    }
+    return { source: false };
+  }
+
+  _renderCopy() {
+    const { source, volume } = this._mainVolume();
+    this._copy.hidden = !source;
+    this._copy.disabled = !volume;
+    this._copy.title = volume ? "" : "The main subwoofer has no SVS Subwoofer volume feature";
+  }
+
+  // The main subwoofer's range and thresholds replace this row's
+  _copyMain() {
+    const { volume } = this._mainVolume();
+    if (!volume) return;
+    this._config = { ...JSON.parse(JSON.stringify(volume)), type: this._config.type };
+    this._note.textContent = "";
+    this._render();
+    fire(this, "config-changed", { config: this._config });
   }
 
   _changed(ev) {
@@ -866,6 +919,11 @@ const finishTone = (finish) => (finish === "gloss_white" ? "light" : finish === 
 // The solid backing behind each feature control on a finish
 const BACKING = { dark: "#1e1f22", light: "#eceef1" };
 const DEFAULT_PATTERN = 4242;
+// Each finish's color for the volume loupe's bezel
+const BEZEL = {
+  black_ash: "#24211f", black_oak: "#1f1b17", gloss_black: "#101113",
+  gloss_white: "#f3f4f6", fabric: "#1b1c1e", grille: "#2c2e33",
+};
 
 function rng(seed) {
   let s = seed >>> 0;
@@ -1213,7 +1271,6 @@ class SvsCard extends HTMLElement {
         .tile.dark { --primary-text-color: rgba(255, 255, 255, .95); --secondary-text-color: rgba(235, 235, 240, .7); text-shadow: 0 1px 2px rgba(0, 0, 0, .8); }
         .tile.light { --primary-text-color: rgba(0, 0, 0, .85); --secondary-text-color: rgba(40, 40, 48, .62); }
         /* Flat and Inset: no finish shows through a control */
-        .tile.light { --svs-loupe-plain: #f4f5f7; }
         .tile.dark.solid { --svs-feature-backing: ${BACKING.dark}; }
         .tile.light.solid { --svs-feature-backing: ${BACKING.light}; }
         /* With the finish on the expander card, this card is see-through */
@@ -1605,6 +1662,9 @@ class SvsCard extends HTMLElement {
     this._frame.classList.toggle("finished", !!tone);
     this._frame.classList.toggle("through", through);
     this._frame.classList.toggle("light-finish", tone === "light");
+    // The volume loupe's bezel is of the finish (the theme's card color without one)
+    if (BEZEL[finish]) this.style.setProperty("--svs-bezel", BEZEL[finish]);
+    else this.style.removeProperty("--svs-bezel");
     if (this._tile) {
       this._tile.classList.toggle("dark", tone === "dark");
       this._tile.classList.toggle("light", tone === "light");
@@ -1863,7 +1923,7 @@ class SvsPanelCard extends HTMLElement {
           box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16), inset 0 -1px 0 rgba(0, 0, 0, .4);
         }
         .dark { --primary-text-color: rgba(255, 255, 255, .95); --divider-color: rgba(255, 255, 255, .14); }
-        .light { --primary-text-color: rgba(0, 0, 0, .85); --divider-color: rgba(0, 0, 0, .12); --svs-loupe-plain: #f4f5f7; }
+        .light { --primary-text-color: rgba(0, 0, 0, .85); --divider-color: rgba(0, 0, 0, .12); }
         .members { display: grid; }
         .panel:not(.open) .members { display: none; }
       </style>
@@ -1960,6 +2020,7 @@ class SvsPanelCard extends HTMLElement {
         bluetooth: this._config.bluetooth ?? "show",
         vibration: this._config.vibration !== false,
         standby_badge: !!this._config.standby_badge,
+        driver_ring: this._config.driver_ring !== false,
         ...own,
         type: "custom:svs-subwoofer-card",
         name: member.name || defaults[member.entity],
@@ -2196,7 +2257,7 @@ class SvsCardEditor extends HTMLElement {
         selector: { select: { mode: "dropdown", options: BLUETOOTH.map(([value, label]) => ({ value, label })) } },
       },
       {
-        name: "driver_ring", label: "Ring around the driver",
+        name: "driver_ring", label: "Driver ring",
         helper: "In the active preset's color, or the volume threshold's color.",
         selector: { boolean: {} },
       },
@@ -2260,8 +2321,9 @@ class SvsPanelCardEditor extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this.shadowRoot.innerHTML = `
       <style>
-        h3 { margin: 32px 0 4px; font-size: var(--ha-font-size-l, 16px); font-weight: 500; }
+        h3 { margin: 24px 0 4px; font-size: var(--ha-font-size-l, 16px); font-weight: 500; }
         .hint { margin: 0 0 8px; color: var(--secondary-text-color); font-size: var(--ha-font-size-s, 12px); }
+        ha-expansion-panel .hint { margin: 8px 0 0; }
         .toolbar { display: flex; align-items: center; gap: 4px; border-bottom: 1px solid var(--divider-color); margin-bottom: 16px; }
         .tabs { display: flex; flex: 1; gap: 4px; overflow-x: auto; }
         .tab {
@@ -2270,19 +2332,24 @@ class SvsPanelCardEditor extends HTMLElement {
         }
         .tab[aria-selected="true"] { color: var(--primary-color); border-bottom-color: var(--primary-color); }
         .tab:focus-visible { outline: 2px solid var(--primary-color); outline-offset: -2px; }
-        .row-options { display: flex; align-items: center; justify-content: space-between; gap: 4px; margin-bottom: 8px; }
+        .row-options { display: flex; align-items: center; justify-content: flex-end; gap: 4px; margin-bottom: 8px; }
         .row-options .buttons { display: flex; gap: 4px; }
         ha-form { display: block; margin-top: 24px; }
       </style>
-      <div id="card"></div>
-      <h3>Subwoofers in the panel</h3>
-      <p class="hint">One row per subwoofer, below the card. Select a number to edit that subwoofer's row; the plus button adds a subwoofer.</p>
+      <ha-expansion-panel outlined header="Main subwoofer">
+        <p class="hint">We recommend a subwoofer group here, so the card controls all of its subwoofers together.</p>
+        <div id="card"></div>
+      </ha-expansion-panel>
+      <h3>Subwoofers in the collapsible section</h3>
+      <p class="hint">We recommend the group's member subwoofers here, so each one can also be adjusted on its own. Each numbered tab is one subwoofer; the plus button adds one.</p>
+      <div id="rows"></div>
       <div class="toolbar">
-        <div class="tabs" role="tablist" aria-label="Subwoofers in the panel"></div>
+        <div class="tabs" role="tablist" aria-label="Subwoofers in the collapsible section"></div>
         <ha-icon-button id="add"></ha-icon-button>
       </div>
       <div id="body"></div>`;
     this._cardSlot = this.shadowRoot.getElementById("card");
+    this._rowsSlot = this.shadowRoot.getElementById("rows");
     this._tabs = this.shadowRoot.querySelector(".tabs");
     this._body = this.shadowRoot.getElementById("body");
     const add = this.shadowRoot.getElementById("add");
@@ -2355,8 +2422,8 @@ class SvsPanelCardEditor extends HTMLElement {
     else this._showMember(this._selected);
   }
 
-  // The card itself, above the tabs: the SVS Subwoofer card's editor, and how
-  // the rows open
+  // The main subwoofer, in a collapsed section above the tabs: the SVS
+  // Subwoofer card's editor. Below it, how the collapsible section opens.
   _showCard() {
     if (!this._cardEditor) {
       this._cardEditor = document.createElement(EDITOR_TYPE);
@@ -2377,7 +2444,8 @@ class SvsPanelCardEditor extends HTMLElement {
         this._fire({ ...this._config, members_toggle: v.members_toggle !== false, members_open: v.members_open !== false });
         this._renderRowsForm();
       });
-      this._cardSlot.replaceChildren(this._cardEditor, this._rowsForm);
+      this._cardSlot.replaceChildren(this._cardEditor);
+      this._rowsSlot.replaceChildren(this._rowsForm);
     }
     const card = { ...this._config };
     for (const key of PANEL_KEYS) delete card[key];
@@ -2391,12 +2459,12 @@ class SvsPanelCardEditor extends HTMLElement {
     this._rowsForm.hass = this._hass;
     this._rowsForm.schema = [
       {
-        name: "members_toggle", label: "Tap the card to show or hide the subwoofers",
+        name: "members_toggle", label: "Tap the card to toggle the collapsible section",
         helper: "While this is on, a tap on the card does this instead of its Tap behavior (under Interactions). Icon tap behavior still works.",
         selector: { boolean: {} },
       },
       ...(this._config.members_toggle === false ? [] : [
-        { name: "members_open", label: "Show the subwoofers when the page opens", selector: { boolean: {} } },
+        { name: "members_open", label: "Show the collapsible section at load", selector: { boolean: {} } },
       ]),
     ];
     this._rowsForm.data = { members_toggle: this._config.members_toggle !== false, members_open: this._config.members_open !== false };
@@ -2465,24 +2533,6 @@ class SvsPanelCardEditor extends HTMLElement {
       members.splice(index + 1, 0, copy);
       update(members, index + 1);
     };
-    // The card's volume feature settings (range and thresholds), copied to
-    // this row's volume feature (added if the row has none)
-    const cardVolume = (this._config.features ?? []).find((f) => f.type === "custom:svs-subwoofer-volume");
-    const copyVolume = document.createElement("ha-button");
-    copyVolume.textContent = "Copy the card's volume settings";
-    copyVolume.disabled = !cardVolume;
-    copyVolume.title = cardVolume ? "Use the card's volume range and thresholds on this row" : "The card has no SVS Subwoofer volume feature";
-    copyVolume.addEventListener("click", () => {
-      const row = JSON.parse(JSON.stringify(this._members[index]));
-      const features = row.features ?? [];
-      const at = features.findIndex((f) => f.type === "custom:svs-subwoofer-volume");
-      if (at >= 0) features[at] = JSON.parse(JSON.stringify(cardVolume));
-      else features.push(JSON.parse(JSON.stringify(cardVolume)));
-      row.features = features;
-      const members = [...this._members];
-      members[index] = row;
-      update(members, index);
-    });
     buttons.append(
       button(MDI.copy, "Duplicate", false, duplicate),
       button(MDI.left, "Move before", index === 0, () => move(-1)),
@@ -2492,12 +2542,14 @@ class SvsPanelCardEditor extends HTMLElement {
         update(members, Math.max(0, index - 1));
       }),
     );
-    options.append(copyVolume, buttons);
+    options.append(buttons);
     this._body.replaceChildren(options);
     const editor = await createTileEditor(member.entity);
     if (this._selected !== index) return;  // another tab was chosen meanwhile
     // Only single subwoofers' volumes in the entity picker
     editor.svsEntities = svsVolumes(this._hass, false);
+    // The volume settings editor in this row offers the main subwoofer's
+    editor.svsMainVolume = () => (this._config.features ?? []).find((f) => f.type === "custom:svs-subwoofer-volume");
     editor.addEventListener("config-changed", (ev) => {
       ev.stopPropagation();
       const next = { ...ev.detail.config };
