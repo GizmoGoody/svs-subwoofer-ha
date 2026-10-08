@@ -60,6 +60,8 @@ FEATURES: dict[str, Callable[[], bool]] = {
     ),
     # Dashboard card and tile features
     "card": lambda: Path("custom_components/svs_subwoofer/card.py").exists(),
+    # Standby modes written Auto On and On
+    "standby_names": lambda: _source_contains("const", '"Auto On"'),
     # Subwoofer groups
     "groups": lambda: _has("const", "ENTRY_TYPE_GROUP"),
     # dev only (connection options)

@@ -23,11 +23,14 @@ from .conftest import (
     entity_id,
     settle,
 )
-from .features import requires
+from .features import has, requires
 
 pytestmark = requires("groups")
 
 ALL_FEATURES = ["preset", "standby", "volume"]
+# The standby mode names, as the branch under test writes them
+AUTO_ON = "Auto On" if has("standby_names") else "Auto ON"
+ON = "On" if has("standby_names") else "ON"
 
 
 async def _setup_subs(setup_entry: SetupEntry) -> None:
@@ -243,12 +246,12 @@ async def test_standby_is_set_on_every_sub(
     await _setup_subs(setup_entry)
     entry = await _setup_group(hass)
     standby = _group_entity(hass, entry, "select", "standby_mode")
-    assert _state(hass, standby) == "ON"
+    assert _state(hass, standby) == ON
 
-    await _call(hass, "select", standby, option="Auto ON")
+    await _call(hass, "select", standby, option=AUTO_ON)
     assert sub.settings["STANDBY"] == 0
     assert second_sub.settings["STANDBY"] == 0
-    assert _state(hass, standby) == "Auto ON"
+    assert _state(hass, standby) == AUTO_ON
 
     await _call(
         hass, "select", entity_id(hass, "select", "standby_mode"), option="Trigger"
