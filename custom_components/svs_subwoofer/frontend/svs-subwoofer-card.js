@@ -115,9 +115,24 @@ function keepTaps(el) {
 }
 
 // ---------------------------------------------------------------------------
-// Shared feature styles: Home Assistant's feature variables, with a solid
-// backing behind each control when the SVS card draws a finish
+// Shared feature styles: Home Assistant's feature variables. On the SVS card,
+// Flat and Inset give each control a solid backing (--svs-feature-backing),
+// and Inset (the svs-inset attribute) makes the controls look physical:
+// keys that press in, and a slatted bar for the volume.
 // ---------------------------------------------------------------------------
+const KEY_CSS = `
+  :host([svs-inset]) button {
+    background-image: linear-gradient(180deg, rgba(255,255,255,.35), rgba(255,255,255,0) 45%, rgba(0,0,0,.18));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.55), inset 0 -2px 2px rgba(0,0,0,.3), 0 2px 3px rgba(0,0,0,.5);
+    transition: transform 120ms ease-in-out, box-shadow 120ms ease-in-out;
+  }
+  :host([svs-inset]) button:active,
+  :host([svs-inset]) button[aria-pressed="true"] {
+    transform: translateY(1px) scale(.96);
+    background-image: linear-gradient(180deg, rgba(0,0,0,.22), rgba(0,0,0,0) 55%, rgba(255,255,255,.08));
+    box-shadow: inset 0 2px 4px rgba(0,0,0,.55), inset 0 -1px 0 rgba(255,255,255,.2);
+  }
+`;
 const FEATURE_CSS = `
   :host { display: block; }
   .control {
@@ -155,6 +170,7 @@ class SvsPresetButtons extends HTMLElement {
         ha-icon { --mdc-icon-size: 22px; }
         span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .cycle { gap: 6px; grid-auto-flow: column; justify-content: center; align-items: center; }
+        ${KEY_CSS}
       </style>
       <div class="row" role="group" aria-label="Preset"></div>`;
     this._row = this.shadowRoot.querySelector(".row");
@@ -398,6 +414,16 @@ class SvsVolume extends HTMLElement {
         .fill { position: absolute; inset: 0 auto 0 0; background: var(--fill, var(--feature-color)); }
         .tick { position: absolute; top: 25%; bottom: 25%; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--primary-text-color); opacity: .35; }
         .handle { position: absolute; top: 25%; bottom: 25%; width: 4px; margin-left: -10px; border-radius: 2px; background: #fff; box-shadow: 0 0 2px rgba(0, 0, 0, .45); }
+        :host([svs-inset]) .zones i, :host([svs-inset]) .control:not(.ranged) .zones { opacity: .08; }
+        :host([svs-inset]) .handle { display: none; }
+        :host([svs-inset]) .fill {
+          background-image:
+            repeating-linear-gradient(90deg,
+              rgba(255,255,255,.28) 0, rgba(255,255,255,.08) 4px, rgba(0,0,0,.12) 8px,
+              rgba(0,0,0,.6) 8px, rgba(0,0,0,.6) 10px),
+            linear-gradient(180deg, rgba(255,255,255,.3), rgba(255,255,255,0) 40%, rgba(0,0,0,.3));
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.3), inset 0 -1px 0 rgba(0,0,0,.35);
+        }
       </style>
       <div class="control" role="slider" tabindex="0" aria-label="Volume">
         <div class="zones"></div><div class="fill"></div><div class="ticks"></div><div class="handle"></div>
@@ -692,6 +718,9 @@ class SvsStandby extends HTMLElement {
         /* The selected mode's text takes the color behind the control, so it reads on any feature color */
         button[aria-pressed="true"] { background: var(--feature-color); color: var(--svs-feature-backing, var(--card-background-color, var(--primary-background-color))); }
         button:focus-visible { outline: 2px solid var(--feature-color); outline-offset: -2px; }
+        ${KEY_CSS}
+        :host([svs-inset]) .control { gap: 4px; padding: 2px; box-sizing: border-box; }
+        :host([svs-inset]) .tint { display: none; }
       </style>
       <div class="control" role="group" aria-label="Standby mode"><div class="tint"></div></div>`;
     this._control = this.shadowRoot.querySelector(".control");
@@ -914,7 +943,9 @@ const BT_ON = "M14.88,16.29L13,18.17V14.41M13,5.83L14.88,7.71L13,9.58M17.71,7.71
 const BT_OFF = "M13 5.83l1.88 1.88-1.6 1.6 1.41 1.41 3.02-3.02L12 2h-1v5.03l2 2zM5.41 4L4 5.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l4.29-4.29 2.3 2.29L20 18.59 5.41 4zM13 18.17v-3.76l1.88 1.88L13 18.17z";
 
 // Options this card adds to the tile card's
-const OWN_KEYS = ["finish", "pattern", "vibration", "bluetooth", "finish_extent", "features_style"];
+// The prototype panel card's own options, kept out of the tile card too
+const PANEL_KEYS = ["members", "member_features", "members_open"];
+const OWN_KEYS = ["finish", "pattern", "vibration", "bluetooth", "finish_extent", "features_style", "_embedded", ...PANEL_KEYS];
 // The same keys and values as The Lampster card
 const FEATURES_STYLES = [["match", "Match style"], ["flat", "Flat"], ["inset", "Inset"]];
 // The finish's base color, without grain or reflections, for Flat
@@ -933,6 +964,67 @@ function tileConfig(config) {
   const tile = { ...config, type: "tile", show_entity_picture: true };
   for (const key of OWN_KEYS) delete tile[key];
   return tile;
+}
+
+/**
+ * Inset styling for Home Assistant's own slider and toggle features: the
+ * slider's used part becomes a slatted bar, and the toggle a slide with a
+ * beveled tab. This styles parts inside Home Assistant's controls; if an
+ * update renames them, they keep their usual look.
+ */
+const HA_CONTROL_SHEET = `
+  :host([svs-channel]) .slider .slider-track-background { opacity: 0; }
+  :host([svs-channel]) .slider .slider-track-bar {
+    background-image:
+      repeating-linear-gradient(90deg,
+        rgba(255,255,255,.28) 0, rgba(255,255,255,.08) 4px, rgba(0,0,0,.12) 8px,
+        rgba(0,0,0,.6) 8px, rgba(0,0,0,.6) 10px),
+      linear-gradient(180deg, rgba(255,255,255,.3), rgba(255,255,255,0) 40%, rgba(0,0,0,.3));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.3), inset 0 -1px 0 rgba(0,0,0,.35);
+  }
+  :host([svs-channel]) .slider .slider-track-bar::after { display: none; }
+  :host([svs-slide]) .switch .background,
+  :host([svs-slide]) .switch:hover .background,
+  :host([svs-slide]) .switch:focus-visible .background { opacity: 0 !important; }
+  :host([svs-slide]) { --control-switch-padding: 0px !important; }
+  :host([svs-slide]) .switch { padding: 0 !important; }
+  :host([svs-slide]) .switch .button {
+    position: relative;
+    background-color: var(--control-switch-on-color);
+    background-image: linear-gradient(180deg, rgba(255,255,255,.4), rgba(255,255,255,.05) 40%, rgba(0,0,0,.05) 60%, rgba(0,0,0,.3));
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.6), inset 0 -1px 0 rgba(0,0,0,.35),
+      inset 1px 0 0 rgba(255,255,255,.25), inset -1px 0 0 rgba(0,0,0,.25),
+      0 1px 2px rgba(0,0,0,.55);
+  }
+  :host([svs-slide]) .switch .button ha-svg-icon,
+  :host([svs-slide]) .switch .button slot { display: none; }
+`;
+let haControlSheet;
+function styleHaControl(control, attribute, on) {
+  const root = control.shadowRoot;
+  if (!root) return;
+  if (!haControlSheet) {
+    haControlSheet = new CSSStyleSheet();
+    haControlSheet.replaceSync(HA_CONTROL_SHEET);
+  }
+  if (!root.adoptedStyleSheets.includes(haControlSheet)) root.adoptedStyleSheets = [...root.adoptedStyleSheets, haControlSheet];
+  // A slider showing a scale (such as a gradient) keeps its look
+  if (attribute === "svs-channel") {
+    const opacity = parseFloat(getComputedStyle(control).getPropertyValue("--control-slider-background-opacity"));
+    on = on && !(opacity >= 1);
+  }
+  control.toggleAttribute(attribute, on);
+}
+
+/** All elements matching selector inside root's shadow roots, a few deep. */
+function findAllDeep(root, selector, depth = 5, out = []) {
+  if (!root || depth < 0) return out;
+  out.push(...(root.querySelectorAll?.(selector) ?? []));
+  for (const el of root.querySelectorAll?.("*") ?? []) {
+    if (el.shadowRoot) findAllDeep(el.shadowRoot, selector, depth - 1, out);
+  }
+  return out;
 }
 
 /** Elements matching selector in el's shadow root, a few shadow roots deep. */
@@ -976,14 +1068,11 @@ class SvsCard extends HTMLElement {
           --ha-card-box-shadow: none; --ha-card-border-color: transparent;
           --ha-card-backdrop-filter: none;
         }
-        .tile.dark {
-          --primary-text-color: rgba(255, 255, 255, .95); --secondary-text-color: rgba(235, 235, 240, .7);
-          --svs-feature-backing: ${BACKING.dark};
-        }
-        .tile.light {
-          --primary-text-color: rgba(0, 0, 0, .85); --secondary-text-color: rgba(40, 40, 48, .62);
-          --svs-feature-backing: ${BACKING.light};
-        }
+        .tile.dark { --primary-text-color: rgba(255, 255, 255, .95); --secondary-text-color: rgba(235, 235, 240, .7); }
+        .tile.light { --primary-text-color: rgba(0, 0, 0, .85); --secondary-text-color: rgba(40, 40, 48, .62); }
+        /* Flat and Inset: no finish shows through a control */
+        .tile.dark.solid { --svs-feature-backing: ${BACKING.dark}; }
+        .tile.light.solid { --svs-feature-backing: ${BACKING.light}; }
         /* With the finish on the expander card, this card is see-through */
         .through .tile {
           --ha-card-background: transparent; --card-background-color: transparent;
@@ -1321,17 +1410,21 @@ class SvsCard extends HTMLElement {
     if (!this._config) return;
     const finish = this._config.finish;
     const tone = finishTone(finish);
-    const onExpander = !!tone && this._config.finish_extent === "container";
+    // Embedded (in the prototype panel card), the panel draws the finish
+    const embedded = !!this._config._embedded;
+    const onExpander = !!tone && this._config.finish_extent === "container" && !embedded;
+    const through = embedded || onExpander;
     this._frame.classList.toggle("finished", !!tone);
-    this._frame.classList.toggle("through", onExpander);
+    this._frame.classList.toggle("through", through);
     if (this._tile) {
       this._tile.classList.toggle("dark", tone === "dark");
       this._tile.classList.toggle("light", tone === "light");
+      this._tile.classList.toggle("solid", !!tone && (this._config.features_style ?? "match") !== "match");
     }
     if (this._badge.classList.contains("on")) this._placeBadge();
-    this._paintExpander(onExpander);
+    if (!embedded) this._paintExpander(onExpander);
     this._drawAreas();
-    if (!tone || onExpander) return;
+    if (!tone || through) return;
     const w = this._frame.clientWidth, h = this._frame.clientHeight;
     if (!w || !h) return;
     const pattern = Number.isFinite(this._config.pattern) ? this._config.pattern : DEFAULT_PATTERN;
@@ -1385,6 +1478,22 @@ class SvsCard extends HTMLElement {
     return areas;
   }
 
+  // Inset: our features become keys and a slatted bar; Home Assistant's
+  // slider and toggle get the same treatment
+  _styleControls(inset) {
+    const root = this._tile?.shadowRoot;
+    if (!root) return;
+    try {
+      for (const el of findAllDeep(root, "svs-subwoofer-presets, svs-subwoofer-volume, svs-subwoofer-standby")) {
+        el.toggleAttribute("svs-inset", inset);
+      }
+      for (const el of findAllDeep(root, "ha-control-slider")) styleHaControl(el, "svs-channel", inset);
+      for (const el of findAllDeep(root, "ha-control-switch")) styleHaControl(el, "svs-slide", inset);
+    } catch (err) {
+      console.warn("SVS Subwoofer card: could not style the controls", err);
+    }
+  }
+
   // Redraw when elements are added in the tile card (features render late)
   _watchAdded(root) {
     if (!root) return;
@@ -1400,6 +1509,7 @@ class SvsCard extends HTMLElement {
 
   _drawAreas() {
     const style = finishTone(this._config?.finish) ? this._config.features_style ?? "match" : "match";
+    this._styleControls(style === "inset");
     if (style === "match") {
       this._areas.replaceChildren();
       this._areasKey = undefined;
@@ -1493,6 +1603,226 @@ class SvsCard extends HTMLElement {
     }
     style.textContent = `ha-card { background: url("${canvas.toDataURL()}") center / 100% 100% no-repeat !important; ` +
       "box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16), inset 0 -1px 0 rgba(0, 0, 0, .4) !important; }";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PROTOTYPE: the panel card. The SVS Subwoofer card for a subwoofer or group,
+// with rows for chosen subwoofers below it, on one surface: the finish covers
+// the whole panel, and a handle opens and closes the rows. It stands in for
+// an expander card holding an SVS Subwoofer card and one card per subwoofer.
+// ---------------------------------------------------------------------------
+const PANEL_TYPE = "svs-subwoofer-panel-card";
+const PANEL_EDITOR_TYPE = "svs-subwoofer-panel-card-editor";
+const MEMBER_FEATURES = [
+  ["volume", "Volume", "custom:svs-subwoofer-volume"],
+  ["presets", "Preset (one button that loads the next)", "custom:svs-subwoofer-presets"],
+  ["standby", "Standby mode", "custom:svs-subwoofer-standby"],
+];
+const CHEVRON = "M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z";
+
+/** Every single subwoofer's volume entity (not groups), as [entity_id, name]. */
+function subwoofers(hass) {
+  return Object.values(hass?.entities ?? {})
+    .filter((e) => e.platform === DOMAIN && e.translation_key === "volume")
+    .map((e) => {
+      const device = hass.devices?.[e.device_id];
+      return [e.entity_id, device?.name_by_user || device?.name || e.entity_id];
+    });
+}
+
+// Names without the part they all share ("Subwoofer Left", "Subwoofer Right"
+// become "Left" and "Right")
+function shortNames(names) {
+  if (names.length < 2) return names;
+  const words = names.map((n) => n.split(" "));
+  let common = 0;
+  while (words.every((w) => w.length > common + 1 && w[common] === words[0][common])) common++;
+  return words.map((w) => w.slice(common).join(" "));
+}
+
+class SvsPanelCard extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this.shadowRoot.innerHTML = `
+      <style>
+        :host { display: block; }
+        .panel {
+          position: relative; overflow: hidden; isolation: isolate; box-sizing: border-box;
+          border-radius: var(--ha-card-border-radius, var(--ha-border-radius-lg));
+          background: var(--ha-card-background, var(--card-background-color, #fff));
+          -webkit-backdrop-filter: var(--ha-card-backdrop-filter, none); backdrop-filter: var(--ha-card-backdrop-filter, none);
+          border: var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color, #e0e0e0));
+          box-shadow: var(--ha-card-box-shadow, none);
+          color: var(--primary-text-color);
+        }
+        canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: none; pointer-events: none; z-index: -1; }
+        .finished { -webkit-backdrop-filter: none; backdrop-filter: none; border-color: transparent; }
+        .finished canvas { display: block; }
+        .finished::after {
+          content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16), inset 0 -1px 0 rgba(0, 0, 0, .4);
+        }
+        .dark { --primary-text-color: rgba(255, 255, 255, .95); --divider-color: rgba(255, 255, 255, .14); }
+        .light { --primary-text-color: rgba(0, 0, 0, .85); --divider-color: rgba(0, 0, 0, .12); }
+        .handle {
+          display: flex; justify-content: center; width: 100%; height: 22px; padding: 0; border: 0; margin: 0;
+          background: transparent; color: var(--primary-text-color); cursor: pointer; opacity: .7;
+        }
+        .handle:hover { opacity: 1; }
+        .handle:focus-visible { outline: 2px solid var(--primary-color); outline-offset: -2px; border-radius: var(--ha-border-radius-sm, 4px); }
+        .handle svg { width: 22px; height: 22px; transition: transform 200ms ease-in-out; }
+        .open .handle svg { transform: rotate(180deg); }
+        .handle[hidden] { display: none; }
+        .members { display: grid; }
+        .members > * + * { border-top: 1px solid var(--divider-color); }
+        .panel:not(.open) .members { display: none; }
+        @media (prefers-reduced-motion: reduce) { .handle svg { transition: none; } }
+      </style>
+      <div class="panel">
+        <canvas></canvas>
+        <div class="header"></div>
+        <button type="button" class="handle"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="${CHEVRON}"/></svg></button>
+        <div class="members"></div>
+      </div>`;
+    this._panel = this.shadowRoot.querySelector(".panel");
+    this._canvas = this.shadowRoot.querySelector("canvas");
+    this._headerSlot = this.shadowRoot.querySelector(".header");
+    this._membersSlot = this.shadowRoot.querySelector(".members");
+    this._handle = this.shadowRoot.querySelector(".handle");
+    this._handle.addEventListener("click", () => this._setOpen(!this._open));
+    new ResizeObserver(() => this._paint()).observe(this._panel);
+  }
+
+  static getConfigElement() {
+    return document.createElement(PANEL_EDITOR_TYPE);
+  }
+
+  static getStubConfig(hass) {
+    return { ...SvsCard.getStubConfig(hass), members: subwoofers(hass).map(([id]) => id), member_features: ["volume"] };
+  }
+
+  setConfig(config) {
+    if (!config?.entity) throw new Error("Choose an SVS Subwoofer entity");
+    this._config = config;
+    // The header: the SVS Subwoofer card, without the panel's own options
+    const header = { ...config, type: "custom:svs-subwoofer-card", _embedded: true };
+    for (const key of PANEL_KEYS) delete header[key];
+    if (!this._header) {
+      this._header = document.createElement("svs-subwoofer-card");
+      this._headerSlot.append(this._header);
+    }
+    this._header.setConfig(header);
+    this._members = undefined;
+    this._open = this._storedOpen() ?? config.members_open !== false;
+    this._buildMembers();
+    this._apply();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    if (this._header) this._header.hass = hass;
+    if (!this._members) this._buildMembers();
+    for (const card of this._memberCards ?? []) card.hass = hass;
+  }
+
+  get hass() {
+    return this._hass;
+  }
+
+  getCardSize() {
+    return 1 + (this._config?.features?.length ?? 0) + (this._open ? (this._config?.members?.length ?? 0) : 0);
+  }
+
+  getGridOptions() {
+    return { columns: 12, min_columns: 6 };
+  }
+
+  // Each member is the SVS Subwoofer card for that subwoofer's volume, with
+  // the panel's finish, features style and member features
+  _buildMembers() {
+    if (!this._config || !this._hass) return;
+    const ids = (this._config.members ?? []).filter((id) => this._hass.states[id]);
+    const all = Object.fromEntries(subwoofers(this._hass));
+    const names = shortNames(ids.map((id) => all[id] ?? id));
+    const chosen = this._config.member_features ?? ["volume"];
+    // A member feature uses the header's settings for the same feature
+    const fromHeader = (type) => (this._config.features ?? []).find((f) => f.type === type) ?? { type };
+    const features = MEMBER_FEATURES.filter(([key]) => chosen.includes(key))
+      .sort((a, b) => chosen.indexOf(a[0]) - chosen.indexOf(b[0]))
+      .map(([key, , type]) => (key === "presets" ? { ...fromHeader(type), style: "cycle" } : fromHeader(type)));
+    this._members = ids;
+    this._memberCards = ids.map((id, i) => {
+      const card = document.createElement("svs-subwoofer-card");
+      card.setConfig({
+        type: "custom:svs-subwoofer-card",
+        entity: id,
+        name: names[i],
+        state_content: ["state", "preset", "standby_mode"],
+        features,
+        features_position: "inline",
+        finish: this._config.finish ?? "none",
+        ...(this._config.pattern !== undefined ? { pattern: this._config.pattern } : {}),
+        features_style: this._config.features_style ?? "match",
+        bluetooth: this._config.bluetooth ?? "tap",
+        vibration: this._config.vibration !== false,
+        _embedded: true,
+      });
+      card.hass = this._hass;
+      return card;
+    });
+    this._membersSlot.replaceChildren(...this._memberCards);
+    this._handle.hidden = ids.length === 0;
+  }
+
+  // The open state is remembered in this browser, per panel
+  get _storageKey() {
+    return `svs-subwoofer-panel:${this._config?.entity}`;
+  }
+
+  _storedOpen() {
+    try {
+      const v = window.localStorage.getItem(this._storageKey);
+      return v === null ? undefined : v === "1";
+    } catch (err) {
+      return undefined;
+    }
+  }
+
+  _setOpen(open) {
+    this._open = open;
+    try {
+      window.localStorage.setItem(this._storageKey, open ? "1" : "0");
+    } catch (err) {
+      // Storage can be unavailable (private windows); the panel still works
+    }
+    this._apply();
+  }
+
+  _apply() {
+    const tone = finishTone(this._config?.finish ?? "none");
+    this._panel.classList.toggle("open", this._open);
+    this._panel.classList.toggle("finished", !!tone);
+    this._panel.classList.toggle("dark", tone === "dark");
+    this._panel.classList.toggle("light", tone === "light");
+    this._handle.setAttribute("aria-expanded", String(this._open));
+    this._handle.setAttribute("aria-label", this._open ? "Hide the subwoofers" : "Show the subwoofers");
+    this._paint();
+  }
+
+  _paint() {
+    const finish = this._config?.finish ?? "none";
+    if (!finishTone(finish)) return;
+    const w = this._panel.clientWidth, h = this._panel.clientHeight;
+    if (!w || !h) return;
+    const pattern = Number.isFinite(this._config.pattern) ? this._config.pattern : DEFAULT_PATTERN;
+    const key = `${finish}|${pattern}|${w}x${h}`;
+    if (key === this._drawn) return;
+    this._drawn = key;
+    this._canvas.width = w;
+    this._canvas.height = h;
+    drawFinish(this._canvas.getContext("2d"), finish, pattern, w, h);
   }
 }
 
@@ -1673,6 +2003,69 @@ class SvsCardEditor extends HTMLElement {
   }
 }
 
+class SvsPanelCardEditor extends SvsCardEditor {
+  constructor() {
+    super();
+    const panel = document.createElement("ha-expansion-panel");
+    panel.outlined = true;
+    panel.expanded = true;
+    panel.innerHTML = `<div slot="header" role="heading" aria-level="3">Subwoofers</div><div class="content"><ha-form></ha-form></div>`;
+    this.shadowRoot.append(panel);
+    this._membersForm = panel.querySelector("ha-form");
+    this._membersForm.computeLabel = (s) => s.label ?? s.name;
+    this._membersForm.computeHelper = (s) => s.helper;
+    this._membersForm.addEventListener("value-changed", (ev) => {
+      ev.stopPropagation();
+      const v = ev.detail.value;
+      this._update({
+        members: v.members ?? [],
+        member_features: v.member_features ?? [],
+        members_open: v.members_open !== false,
+      });
+    });
+  }
+
+  set hass(hass) {
+    super.hass = hass;
+    if (this._membersForm) {
+      this._membersForm.hass = hass;
+      this._renderMembers();
+    }
+  }
+
+  get hass() {
+    return this._hass;
+  }
+
+  _render() {
+    super._render();
+    this._renderMembers();
+  }
+
+  _renderMembers() {
+    if (!this._membersForm || !this._config) return;
+    const options = subwoofers(this._hass).map(([value, label]) => ({ value, label }));
+    this._membersForm.schema = [
+      {
+        name: "members", label: "Subwoofers shown, in order",
+        helper: "Rows below the card, one per subwoofer. Leave empty for none.",
+        selector: { select: { multiple: true, reorder: true, mode: "dropdown", options } },
+      },
+      {
+        name: "member_features", label: "Controls on each row, in order",
+        helper: "They use the same settings as the card's own features of that kind.",
+        selector: { select: { multiple: true, reorder: true, mode: "dropdown", options: MEMBER_FEATURES.map(([value, label]) => ({ value, label })) } },
+      },
+      { name: "members_open", label: "Show the subwoofers when the page opens", selector: { boolean: {} } },
+    ];
+    this._membersForm.data = {
+      members: this._config.members ?? [],
+      member_features: this._config.member_features ?? ["volume"],
+      members_open: this._config.members_open !== false,
+    };
+  }
+}
+
 /**
  * The configuration as the editor saves it: finish and vibration written
  * out, and the pattern only for a finish that has one.
@@ -1709,6 +2102,8 @@ if (!customElements.get(CARD_TYPE)) {
   define("svs-subwoofer-standby", SvsStandby);
   define(CARD_TYPE, SvsCard);
   define(EDITOR_TYPE, SvsCardEditor);
+  define(PANEL_TYPE, SvsPanelCard);
+  define(PANEL_EDITOR_TYPE, SvsPanelCardEditor);
 
   const supports = (role) => (hass, context) => isSvs(hass, context?.entity_id) && !!sibling(hass, context.entity_id, role);
   window.customCardFeatures = window.customCardFeatures || [];
@@ -1725,6 +2120,11 @@ if (!customElements.get(CARD_TYPE)) {
     description: "A tile card for an SVS subwoofer or subwoofer group, with an optional SVS cabinet finish.",
     preview: true,
     documentationURL: "https://github.com/dangerouslaser/svs-subwoofer-ha#dashboard-card",
+  }, {
+    type: PANEL_TYPE,
+    name: "SVS Subwoofer panel (prototype)",
+    description: "The SVS Subwoofer card with rows for chosen subwoofers below it, on one surface.",
+    preview: true,
   });
   console.info(`%c SVS SUBWOOFER CARD %c ${VERSION} `, "color: #fff; background: #555; font-weight: bold", "color: #fff; background: #c8102e");
 }
