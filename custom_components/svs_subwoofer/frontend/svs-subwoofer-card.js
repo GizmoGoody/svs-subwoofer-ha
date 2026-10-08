@@ -71,7 +71,7 @@ function sibling(hass, entityId, role) {
   return undefined;
 }
 
-// Lists the user reads are sorted by their label
+// The list of subwoofers is sorted by name
 const byLabel = (a, b) => a.localeCompare(b, undefined, { sensitivity: "base" });
 const sortPairs = (pairs) => [...pairs].sort((a, b) => byLabel(a[1], b[1]));
 
@@ -121,8 +121,7 @@ function keepTaps(el) {
 // ---------------------------------------------------------------------------
 // Shared feature styles: Home Assistant's feature variables. On the SVS card,
 // Flat and Inset give each control a solid backing (--svs-feature-backing),
-// and Inset (the svs-inset attribute) makes the controls look physical:
-// keys that press in, and a slatted bar for the volume.
+// and Inset (the svs-inset attribute) makes the buttons keys that press in.
 // ---------------------------------------------------------------------------
 const KEY_CSS = `
   :host([svs-inset]) button {
@@ -137,6 +136,27 @@ const KEY_CSS = `
     box-shadow: inset 0 2px 4px rgba(0,0,0,.55), inset 0 -1px 0 rgba(255,255,255,.2);
   }
 `;
+// A row of buttons: each tinted in its color, the active one filled
+const BUTTON_ROW_CSS = `
+  .row { display: flex; gap: var(--feature-button-spacing, 12px); height: var(--feature-height, 42px); }
+  button {
+    flex: 1 1 0; min-width: 0; height: 100%; padding: 0 4px; border: 0; cursor: pointer;
+    position: relative; overflow: hidden; display: grid; place-items: center;
+    border-radius: var(--feature-border-radius, 12px);
+    background: var(--svs-feature-backing, transparent);
+    color: var(--primary-text-color); font: inherit; font-size: var(--ha-font-size-s, 12px); font-weight: 500;
+  }
+  button::before { content: ""; position: absolute; inset: 0; background: var(--c, var(--feature-color)); opacity: .2; transition: opacity 180ms ease-in-out; }
+  button:hover::before { opacity: .35; }
+  button[aria-pressed="true"]::before { opacity: 1; }
+  button[aria-pressed="true"] { color: var(--svs-on-color, #fff); }
+  button:focus-visible { outline: 2px solid var(--c, var(--feature-color)); outline-offset: 2px; }
+  button > * { position: relative; }
+  ha-icon { --mdc-icon-size: 22px; }
+  span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  ${KEY_CSS}
+`;
+
 const FEATURE_CSS = `
   :host { display: block; }
   .control {
@@ -156,25 +176,8 @@ class SvsPresetButtons extends HTMLElement {
     super();
     this.attachShadow({ mode: "open" });
     this.shadowRoot.innerHTML = `
-      <style>${FEATURE_CSS}
-        .row { display: flex; gap: var(--feature-button-spacing, 12px); height: var(--feature-height, 42px); }
-        button {
-          flex: 1 1 0; min-width: 0; height: 100%; padding: 0 4px; border: 0; cursor: pointer;
-          position: relative; overflow: hidden; display: grid; place-items: center;
-          border-radius: var(--feature-border-radius, 12px);
-          background: var(--svs-feature-backing, transparent);
-          color: var(--primary-text-color); font: inherit; font-size: var(--ha-font-size-s, 12px); font-weight: 500;
-        }
-        button::before { content: ""; position: absolute; inset: 0; background: var(--c, var(--feature-color)); opacity: .2; transition: opacity 180ms ease-in-out; }
-        button:hover::before { opacity: .35; }
-        button[aria-pressed="true"]::before { opacity: 1; }
-        button[aria-pressed="true"] { color: var(--svs-on-color, #fff); }
-        button:focus-visible { outline: 2px solid var(--c, var(--feature-color)); outline-offset: 2px; }
-        button > * { position: relative; }
-        ha-icon { --mdc-icon-size: 22px; }
-        span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      <style>${FEATURE_CSS}${BUTTON_ROW_CSS}
         .cycle { gap: 6px; grid-auto-flow: column; justify-content: center; align-items: center; }
-        ${KEY_CSS}
       </style>
       <div class="row" role="group" aria-label="Preset"></div>`;
     this._row = this.shadowRoot.querySelector(".row");
@@ -217,7 +220,7 @@ class SvsPresetButtons extends HTMLElement {
     const names = (stateObj?.attributes.options ?? []).filter((n) => !NOT_PRESETS.includes(n));
     const show = Array.isArray(this._config.presets_shown) ? this._config.presets_shown : null;
     const shown = show ? show.filter((n) => names.includes(n)) : names;
-    const cycle = this._config.style === "cycle";
+    const cycle = this._config.style === "presets_cycle";
     const key = JSON.stringify([shown, stateObj?.state, this._config.presets, unavailable(stateObj), cycle]);
     if (key === this._key) return;
     this._key = key;
@@ -323,7 +326,7 @@ class SvsPresetButtonsEditor extends HTMLElement {
           const color = value[`color_${name}`], icon = value[`icon_${name}`];
           if (color || icon) presets[name] = { ...(color ? { color } : {}), ...(icon ? { icon } : {}) };
         }
-        const config = { type: this._config.type, ...(value.style === "cycle" ? { style: "cycle" } : {}), presets };
+        const config = { type: this._config.type, style: value.style === "presets_cycle" ? "presets_cycle" : "presets_buttons", presets };
         // Kept only when it differs from the default (every preset, in slot order)
         if (Array.isArray(value.presets_shown) && JSON.stringify(value.presets_shown) !== JSON.stringify(this._names())) {
           config.presets_shown = value.presets_shown;
@@ -339,13 +342,13 @@ class SvsPresetButtonsEditor extends HTMLElement {
       {
         name: "style", label: "Style",
         selector: { select: { mode: "dropdown", options: [
-          { value: "buttons", label: "A button for each preset" },
-          { value: "cycle", label: "One button that loads the next preset" },
+          { value: "presets_buttons", label: "Buttons" },
+          { value: "presets_cycle", label: "Cycle button" },
         ] } },
       },
       {
         name: "presets_shown", label: "Presets shown, in order",
-        selector: { select: { multiple: true, reorder: true, mode: "dropdown", options: [...names].sort(byLabel) } },
+        selector: { select: { multiple: true, reorder: true, mode: "dropdown", options: names } },
       },
       ...names.map((name) => ({
         type: "grid", name: "", schema: [
@@ -354,7 +357,7 @@ class SvsPresetButtonsEditor extends HTMLElement {
         ],
       })),
     ];
-    const data = { style: this._config.style === "cycle" ? "cycle" : "buttons", presets_shown: this._config.presets_shown ?? names };
+    const data = { style: this._config.style === "presets_cycle" ? "presets_cycle" : "presets_buttons", presets_shown: this._config.presets_shown ?? names };
     for (const name of names) {
       const look = { ...presetDefaults(name), ...(this._config.presets?.[name] ?? {}) };
       data[`color_${name}`] = look.color;
@@ -418,16 +421,6 @@ class SvsVolume extends HTMLElement {
         .fill { position: absolute; inset: 0 auto 0 0; background: var(--fill, var(--feature-color)); }
         .tick { position: absolute; top: 25%; bottom: 25%; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--primary-text-color); opacity: .35; }
         .handle { position: absolute; top: 25%; bottom: 25%; width: 4px; margin-left: -10px; border-radius: 2px; background: #fff; box-shadow: 0 0 2px rgba(0, 0, 0, .45); }
-        :host([svs-inset]) .zones i, :host([svs-inset]) .control:not(.ranged) .zones { opacity: .08; }
-        :host([svs-inset]) .handle { display: none; }
-        :host([svs-inset]) .fill {
-          background-image:
-            repeating-linear-gradient(90deg,
-              rgba(255,255,255,.28) 0, rgba(255,255,255,.08) 4px, rgba(0,0,0,.12) 8px,
-              rgba(0,0,0,.6) 8px, rgba(0,0,0,.6) 10px),
-            linear-gradient(180deg, rgba(255,255,255,.3), rgba(255,255,255,0) 40%, rgba(0,0,0,.3));
-          box-shadow: inset 0 1px 0 rgba(255,255,255,.3), inset 0 -1px 0 rgba(0,0,0,.35);
-        }
       </style>
       <div class="control" role="slider" tabindex="0" aria-label="Volume">
         <div class="zones"></div><div class="fill"></div><div class="ticks"></div><div class="handle"></div>
@@ -479,7 +472,13 @@ class SvsVolume extends HTMLElement {
     if (!this._hass || !this._config || !this._context) return;
     const stateObj = this._hass.states[this._entity];
     const { min, max } = this._limits;
-    const value = this._dragging ?? Number(stateObj?.state);
+    const reported = Number(stateObj?.state);
+    // A value just sent stays shown until the subwoofer reports it (or for
+    // 4 seconds), so the slider does not jump back while the command runs
+    if (this._pending !== undefined && (reported === this._pending || Date.now() > this._pendingUntil)) {
+      this._pending = undefined;
+    }
+    const value = this._dragging ?? this._pending ?? reported;
     const known = Number.isFinite(value);
     const at = (v) => ((v - min) / (max - min)) * 100;
     const pct = known ? Math.max(0, Math.min(100, at(value))) : 0;
@@ -581,6 +580,13 @@ class SvsVolume extends HTMLElement {
   }
 
   _send(value) {
+    this._pending = value;
+    this._pendingUntil = Date.now() + 4000;
+    clearTimeout(this._pendingTimer);
+    this._pendingTimer = setTimeout(() => {
+      this._key = undefined;
+      this._render();
+    }, 4100);
     this._hass.callService("number", "set_value", { entity_id: this._entity, value });
   }
 }
@@ -711,23 +717,15 @@ class SvsStandby extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
+    // The same buttons as the presets, in the feature color; the selected
+    // mode's text takes the card's background color so it reads on any
+    // feature color
     this.shadowRoot.innerHTML = `
-      <style>${FEATURE_CSS}
-        .control { display: flex; }
-        button {
-          position: relative; flex: 1 1 0; min-width: 0; border: 0; cursor: pointer; background: transparent;
-          border-radius: var(--feature-border-radius, 12px);
-          color: var(--primary-text-color); font: inherit; font-size: var(--ha-font-size-s, 12px); font-weight: 500;
-        }
-        /* The selected mode's text takes the color behind the control, so it reads on any feature color */
-        button[aria-pressed="true"] { background: var(--feature-color); color: var(--svs-feature-backing, var(--card-background-color, var(--primary-background-color))); }
-        button:focus-visible { outline: 2px solid var(--feature-color); outline-offset: -2px; }
-        ${KEY_CSS}
-        :host([svs-inset]) .control { gap: 4px; padding: 2px; box-sizing: border-box; }
-        :host([svs-inset]) .tint { display: none; }
+      <style>${FEATURE_CSS}${BUTTON_ROW_CSS}
+        :host { --svs-on-color: var(--svs-feature-backing, var(--card-background-color, #fff)); }
       </style>
-      <div class="control" role="group" aria-label="Standby mode"><div class="tint"></div></div>`;
-    this._control = this.shadowRoot.querySelector(".control");
+      <div class="row" role="group" aria-label="Standby mode"></div>`;
+    this._row = this.shadowRoot.querySelector(".row");
     keepTaps(this);
   }
 
@@ -755,16 +753,17 @@ class SvsStandby extends HTMLElement {
     if (!this._hass || !this._config || !this._context) return;
     const entity = sibling(this._hass, this._context.entity_id, "standby");
     const stateObj = entity ? this._hass.states[entity] : undefined;
-    const options = (stateObj?.attributes.options ?? []).filter((o) => !NOT_PRESETS.includes(o)).sort(byLabel);
+    const options = (stateObj?.attributes.options ?? []).filter((o) => !NOT_PRESETS.includes(o));
     const key = JSON.stringify([options, stateObj?.state, unavailable(stateObj)]);
     if (key === this._key) return;
     this._key = key;
-    this._control.classList.toggle("disabled", unavailable(stateObj));
-    const tint = this._control.querySelector(".tint");
-    this._control.replaceChildren(tint, ...options.map((option) => {
+    this._row.classList.toggle("disabled", unavailable(stateObj));
+    this._row.replaceChildren(...options.map((option) => {
       const button = document.createElement("button");
       button.type = "button";
-      button.textContent = option;
+      const label = document.createElement("span");
+      label.textContent = option;
+      button.append(label);
       button.setAttribute("aria-pressed", String(stateObj.state === option));
       button.addEventListener("click", (ev) => {
         ev.stopPropagation();
@@ -778,7 +777,7 @@ class SvsStandby extends HTMLElement {
 // ---------------------------------------------------------------------------
 // Finishes, drawn on a canvas behind the card
 // ---------------------------------------------------------------------------
-const FINISHES = sortPairs([
+const FINISHES = [
   ["none", "None (theme)"],
   ["black_ash", "Premium Black Ash"],
   ["black_oak", "Black Oak Real Wood Veneer"],
@@ -786,7 +785,7 @@ const FINISHES = sortPairs([
   ["gloss_white", "Piano Gloss White"],
   ["fabric", "Fabric"],
   ["grille", "Grille"],
-]);
+];
 const WOOD = ["black_ash", "black_oak"];
 const finishTone = (finish) => (finish === "gloss_white" ? "light" : finish === "none" ? null : "dark");
 // The solid backing behind each feature control on a finish
@@ -1018,17 +1017,17 @@ const BT_OFF = "M13 5.83l1.88 1.88-1.6 1.6 1.41 1.41 3.02-3.02L12 2h-1v5.03l2 2z
 
 // Options this card adds to the tile card's
 // The prototype panel card's own options, kept out of the tile card too
-const PANEL_KEYS = ["members", "member_features", "members_open", "members_toggle", "member_names", "member_state_content"];
-const OWN_KEYS = ["finish", "pattern", "vibration", "bluetooth", "finish_extent", "features_style", "_embedded", ...PANEL_KEYS];
+const PANEL_KEYS = ["members", "members_open", "members_toggle"];
+const OWN_KEYS = ["finish", "pattern", "vibration", "bluetooth", "standby_badge", "finish_extent", "features_style", "_embedded", ...PANEL_KEYS];
 // The same keys and values as The Lampster card
-const FEATURES_STYLES = sortPairs([["match", "Match style"], ["flat", "Flat"], ["inset", "Inset"]]);
+const FEATURES_STYLES = [["match", "Match style"], ["flat", "Flat"], ["inset", "Inset"]];
 // The finish's base color, without grain or reflections, for Flat
 const FLAT = { black_ash: "#1a1a1d", black_oak: "#161617", gloss_black: "#101113", gloss_white: "#e7e9ed", fabric: "#1f1f21", grille: "#1d1e20" };
-const BLUETOOTH = sortPairs([
+const BLUETOOTH = [
   ["tap", "Show, and tap to connect or disconnect"],
   ["status", "Show only when not connected"],
   ["off", "Hide"],
-]);
+];
 const FINISH_EXTENTS = [
   ["card", "Card"],
   ["container", "Container"],
@@ -1041,22 +1040,11 @@ function tileConfig(config) {
 }
 
 /**
- * Inset styling for Home Assistant's own slider and toggle features: the
- * slider's used part becomes a slatted bar, and the toggle a slide with a
+ * Inset styling for Home Assistant's own toggle feature: a slide with a
  * beveled tab. This styles parts inside Home Assistant's controls; if an
  * update renames them, they keep their usual look.
  */
 const HA_CONTROL_SHEET = `
-  :host([svs-channel]) .slider .slider-track-background { opacity: 0; }
-  :host([svs-channel]) .slider .slider-track-bar {
-    background-image:
-      repeating-linear-gradient(90deg,
-        rgba(255,255,255,.28) 0, rgba(255,255,255,.08) 4px, rgba(0,0,0,.12) 8px,
-        rgba(0,0,0,.6) 8px, rgba(0,0,0,.6) 10px),
-      linear-gradient(180deg, rgba(255,255,255,.3), rgba(255,255,255,0) 40%, rgba(0,0,0,.3));
-    box-shadow: inset 0 1px 0 rgba(255,255,255,.3), inset 0 -1px 0 rgba(0,0,0,.35);
-  }
-  :host([svs-channel]) .slider .slider-track-bar::after { display: none; }
   :host([svs-slide]) .switch .background,
   :host([svs-slide]) .switch:hover .background,
   :host([svs-slide]) .switch:focus-visible .background { opacity: 0 !important; }
@@ -1083,11 +1071,6 @@ function styleHaControl(control, attribute, on) {
     haControlSheet.replaceSync(HA_CONTROL_SHEET);
   }
   if (!root.adoptedStyleSheets.includes(haControlSheet)) root.adoptedStyleSheets = [...root.adoptedStyleSheets, haControlSheet];
-  // A slider showing a scale (such as a gradient) keeps its look
-  if (attribute === "svs-channel") {
-    const opacity = parseFloat(getComputedStyle(control).getPropertyValue("--control-slider-background-opacity"));
-    on = on && !(opacity >= 1);
-  }
   control.toggleAttribute(attribute, on);
 }
 
@@ -1180,15 +1163,24 @@ class SvsCard extends HTMLElement {
         .badge.tappable::before { content: ""; position: absolute; inset: -8px; }
         .badge:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
         .badge svg { width: 16px; height: 16px; }
+        .standby-badge {
+          position: absolute; z-index: 3; width: 14px; height: 14px; margin: -7px 0 0 -7px; display: none;
+          place-items: center; pointer-events: none;
+          font: 700 11px/1 var(--ha-font-family-body, inherit); color: var(--primary-text-color);
+          filter: drop-shadow(0 0 1px rgba(0, 0, 0, .9)) drop-shadow(0 0 2px rgba(0, 0, 0, .6));
+        }
+        .standby-badge.on { display: grid; }
       </style>
       <div class="frame">
         <canvas></canvas>
         <div id="areas"></div>
+        <span class="standby-badge" aria-hidden="true"></span>
         <button type="button" class="badge"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="${BT_OFF}"/></svg></button>
       </div>`;
     this._frame = this.shadowRoot.querySelector(".frame");
     this._canvas = this.shadowRoot.querySelector("canvas");
     this._badge = this.shadowRoot.querySelector(".badge");
+    this._standbyBadge = this.shadowRoot.querySelector(".standby-badge");
     keepTaps(this._badge);
     this._badge.addEventListener("click", () => this._toggleConnection());
     this._areas = this.shadowRoot.getElementById("areas");
@@ -1287,6 +1279,7 @@ class SvsCard extends HTMLElement {
   get _entities() {
     const id = this._config?.entity;
     return {
+      standby: sibling(this._hass, id, "standby"),
       preset: sibling(this._hass, id, "preset"),
       volume: this._hass?.entities?.[id]?.translation_key?.endsWith("volume") ? id : sibling(this._hass, id, "volume"),
       connected: sibling(this._hass, id, "connected"),
@@ -1381,6 +1374,7 @@ class SvsCard extends HTMLElement {
     }
     driver.style.transition = reducedMotion() ? "none" : "scale 350ms cubic-bezier(.3, 1.5, .5, 1)";
     driver.style.scale = String(.7 + level * .5);
+    if (reducedMotion()) this._placeBadge();
   }
 
   // A preset or volume change from anywhere shakes the driver briefly, harder
@@ -1447,7 +1441,15 @@ class SvsCard extends HTMLElement {
     this._badge.title = label;
     this._badge.setAttribute("aria-label", label);
     this._badge.tabIndex = mode === "tap" ? 0 : -1;
-    if (show) this._placeBadge();
+    // The standby mode's first letter: A (Auto ON), O (ON), T (Trigger)
+    const standby = this._entities.standby;
+    const value = standby ? this._hass?.states[standby]?.state : undefined;
+    const letter = this._config?.standby_badge && value && !NOT_PRESETS.includes(value) && value !== "unavailable" && value !== "unknown"
+      ? value.trim()[0].toUpperCase() : "";
+    this._standbyBadge.textContent = letter;
+    this._standbyBadge.title = letter ? `Standby mode: ${value}` : "";
+    this._standbyBadge.classList.toggle("on", !!letter);
+    if (show || letter) this._placeBadge();
   }
 
   _toggleConnection() {
@@ -1458,17 +1460,30 @@ class SvsCard extends HTMLElement {
     if (button) this._hass.callService("button", "press", { entity_id: button });
   }
 
+  /**
+   * The badges sit on the driver's own edge (the driver grows and shrinks
+   * with the volume): Bluetooth up and to the right, the standby mode down
+   * and to the right, each about half over the driver.
+   */
   _placeBadge() {
+    const driver = this._driver;
     const icon = this._tile?.shadowRoot?.querySelector("ha-tile-icon");
-    if (!icon) return;
-    // Centered on the driver's edge, up and to the right, so about half of
-    // the badge sits over the driver
-    const frame = this._frame.getBoundingClientRect(), box = icon.getBoundingClientRect();
+    const target = driver ?? icon;
+    if (!target) return;
+    if (driver && !this._badgeFollows) {
+      this._badgeFollows = true;
+      driver.addEventListener("transitionend", () => this._placeBadge());
+    }
+    const frame = this._frame.getBoundingClientRect(), box = target.getBoundingClientRect();
     const scale = frame.width / this._frame.offsetWidth || 1;
-    const r = box.width / 2 / scale;
-    const cx = (box.left - frame.left) / scale + r, cy = (box.top - frame.top) / scale + r;
+    // The driver's outer ring is 16.7 of the picture's 20 radius
+    const r = (box.width / 2 / scale) * (driver ? 16.7 / 20 : 1);
+    const cx = (box.left - frame.left) / scale + box.width / 2 / scale;
+    const cy = (box.top - frame.top) / scale + box.height / 2 / scale;
     this._badge.style.left = `${cx + r * .7071}px`;
     this._badge.style.top = `${cy - r * .7071}px`;
+    this._standbyBadge.style.left = `${cx + r * .7071}px`;
+    this._standbyBadge.style.top = `${cy + r * .7071}px`;
   }
 
   connectedCallback() {
@@ -1537,9 +1552,9 @@ class SvsCard extends HTMLElement {
       }
       for (const wrap of group.shadowRoot?.querySelectorAll("hui-card-feature") ?? []) {
         const inner = wrap.shadowRoot ?? wrap;
-        const presets = findDeep(inner, "svs-subwoofer-presets");
-        const buttons = presets ? [...(presets.shadowRoot?.querySelectorAll("button") ?? [])] : [];
-        const own = findDeep(inner, "svs-subwoofer-volume, svs-subwoofer-standby");
+        const row = findDeep(inner, "svs-subwoofer-presets, svs-subwoofer-standby");
+        const buttons = row ? [...(row.shadowRoot?.querySelectorAll("button") ?? [])] : [];
+        const own = findDeep(inner, "svs-subwoofer-volume");
         const control = own?.shadowRoot?.querySelector(".control");
         const element = [...inner.children].find((c) => c.tagName !== "STYLE");
         for (const el of buttons.length ? buttons : [control ?? element]) {
@@ -1552,8 +1567,8 @@ class SvsCard extends HTMLElement {
     return areas;
   }
 
-  // Inset: our features become keys and a slatted bar; Home Assistant's
-  // slider and toggle get the same treatment
+  // Inset: the preset and standby buttons become keys, and Home Assistant's
+  // toggle a slide
   _styleControls(inset) {
     const root = this._tile?.shadowRoot;
     if (!root) return;
@@ -1561,7 +1576,6 @@ class SvsCard extends HTMLElement {
       for (const el of findAllDeep(root, "svs-subwoofer-presets, svs-subwoofer-volume, svs-subwoofer-standby")) {
         el.toggleAttribute("svs-inset", inset);
       }
-      for (const el of findAllDeep(root, "ha-control-slider")) styleHaControl(el, "svs-channel", inset);
       for (const el of findAllDeep(root, "ha-control-switch")) styleHaControl(el, "svs-slide", inset);
     } catch (err) {
       console.warn("SVS Subwoofer card: could not style the controls", err);
@@ -1688,12 +1702,6 @@ class SvsCard extends HTMLElement {
 // ---------------------------------------------------------------------------
 const PANEL_TYPE = "svs-subwoofer-panel-card";
 const PANEL_EDITOR_TYPE = "svs-subwoofer-panel-card-editor";
-const MEMBER_FEATURES = sortPairs([
-  ["volume", "Volume", "custom:svs-subwoofer-volume"],
-  ["presets", "Preset (one button that loads the next)", "custom:svs-subwoofer-presets"],
-  ["standby", "Standby mode", "custom:svs-subwoofer-standby"],
-]);
-
 /** Every single subwoofer's volume entity (not groups), as [entity_id, name]. */
 function subwoofers(hass) {
   return Object.values(hass?.entities ?? {})
@@ -1702,6 +1710,16 @@ function subwoofers(hass) {
       const device = hass.devices?.[e.device_id];
       return [e.entity_id, device?.name_by_user || device?.name || e.entity_id];
     });
+}
+
+/** A new member row: the subwoofer's volume, with its state and a slider. */
+function newMember(entity) {
+  return {
+    entity,
+    state_content: ["state", "preset", "standby_mode"],
+    features: [{ type: "custom:svs-subwoofer-volume" }],
+    features_position: "inline",
+  };
 }
 
 /** The names the rows show by default, by entity. */
@@ -1747,7 +1765,6 @@ class SvsPanelCard extends HTMLElement {
         .dark { --primary-text-color: rgba(255, 255, 255, .95); --divider-color: rgba(255, 255, 255, .14); }
         .light { --primary-text-color: rgba(0, 0, 0, .85); --divider-color: rgba(0, 0, 0, .12); }
         .members { display: grid; }
-        .members > * + * { border-top: 1px solid var(--divider-color); }
         .panel:not(.open) .members { display: none; }
       </style>
       <div class="panel">
@@ -1773,7 +1790,8 @@ class SvsPanelCard extends HTMLElement {
   }
 
   static getStubConfig(hass) {
-    return { ...SvsCard.getStubConfig(hass), members: subwoofers(hass).map(([id]) => id), member_features: ["volume"] };
+    const ids = sortPairs(subwoofers(hass)).map(([id]) => id);
+    return { ...SvsCard.getStubConfig(hass), members: ids.map((entity) => newMember(entity)) };
   }
 
   setConfig(config) {
@@ -1783,7 +1801,7 @@ class SvsPanelCard extends HTMLElement {
     const header = { ...config, type: "custom:svs-subwoofer-card", _embedded: true };
     for (const key of PANEL_KEYS) delete header[key];
     // A tap on the card shows or hides the rows (instead of its own tap action)
-    if (config.members_toggle !== false && (config.members ?? []).length) {
+    if (config.members_toggle !== false && (config.members ?? []).some((m) => m?.entity)) {
       header.tap_action = { action: "fire-dom-event", svs_subwoofer_panel: "toggle" };
     }
     if (!this._header) {
@@ -1809,41 +1827,38 @@ class SvsPanelCard extends HTMLElement {
   }
 
   getCardSize() {
-    return 1 + (this._config?.features?.length ?? 0) + (this._open ? (this._config?.members?.length ?? 0) : 0);
+    return 1 + (this._config?.features?.length ?? 0) + (this._open ? this._memberConfigs().length : 0);
   }
 
   getGridOptions() {
     return { columns: 12, min_columns: 6 };
   }
 
-  // Each member is the SVS Subwoofer card for that subwoofer's volume, with
-  // the panel's finish, features style and member features
+  _memberConfigs() {
+    return (this._config?.members ?? []).filter((m) => m && typeof m === "object" && m.entity);
+  }
+
+  // Each member is an SVS Subwoofer card, configured on its own tab in the
+  // editor; the panel's finish and features style apply to all of them
   _buildMembers() {
     if (!this._config || !this._hass) return;
-    const ids = (this._config.members ?? []).filter((id) => this._hass.states[id]);
-    const all = Object.fromEntries(subwoofers(this._hass));
-    const names = shortNames(ids.map((id) => all[id] ?? id));
-    const chosen = this._config.member_features ?? ["volume"];
-    // A member feature uses the header's settings for the same feature
-    const fromHeader = (type) => (this._config.features ?? []).find((f) => f.type === type) ?? { type };
-    const features = MEMBER_FEATURES.filter(([key]) => chosen.includes(key))
-      .sort((a, b) => chosen.indexOf(a[0]) - chosen.indexOf(b[0]))
-      .map(([key, , type]) => (key === "presets" ? { ...fromHeader(type), style: "cycle" } : fromHeader(type)));
-    this._members = ids;
-    this._memberCards = ids.map((id, i) => {
+    const members = this._memberConfigs();
+    const defaults = defaultMemberNames(this._hass, members.map((m) => m.entity));
+    this._members = members;
+    this._memberCards = members.map((member) => {
       const card = document.createElement("svs-subwoofer-card");
+      const own = { ...member };
+      delete own.type;
       card.setConfig({
+        bluetooth: this._config.bluetooth ?? "tap",
+        vibration: this._config.vibration !== false,
+        standby_badge: !!this._config.standby_badge,
+        ...own,
         type: "custom:svs-subwoofer-card",
-        entity: id,
-        name: this._config.member_names?.[id] || names[i],
-        state_content: this._config.member_state_content ?? ["state", "preset", "standby_mode"],
-        features,
-        features_position: "inline",
+        name: member.name || defaults[member.entity],
         finish: this._config.finish ?? "none",
         ...(this._config.pattern !== undefined ? { pattern: this._config.pattern } : {}),
         features_style: this._config.features_style ?? "match",
-        bluetooth: this._config.bluetooth ?? "tap",
-        vibration: this._config.vibration !== false,
         _embedded: true,
       });
       card.hass = this._hass;
@@ -1984,7 +1999,7 @@ class SvsCardEditor extends HTMLElement {
       const v = ev.detail.value;
       this._update({
         finish: v.finish ?? "none", finish_extent: v.finish_extent ?? "card", features_style: v.features_style ?? "match",
-        vibration: v.vibration !== false, bluetooth: v.bluetooth ?? "tap",
+        vibration: v.vibration !== false, bluetooth: v.bluetooth ?? "tap", standby_badge: !!v.standby_badge,
       });
     });
     this.shadowRoot.getElementById("randomize").addEventListener("click", () => {
@@ -2057,12 +2072,17 @@ class SvsCardEditor extends HTMLElement {
         selector: { select: { mode: "dropdown", options: BLUETOOTH.map(([value, label]) => ({ value, label })) } },
       },
       {
+        name: "standby_badge", label: "Standby mode badge",
+        helper: "A letter on the driver for the standby mode: A (Auto ON), O (ON) or T (Trigger).",
+        selector: { boolean: {} },
+      },
+      {
         name: "vibration", label: "Shake when the volume or preset changes",
         helper: "The driver shakes harder at a higher volume. It stays still for anyone who has reduced motion turned on.",
         selector: { boolean: {} },
       },
     ];
-    this._form.data = { finish: c.finish, finish_extent: c.finish_extent ?? "card", features_style: c.features_style ?? "match", vibration: c.vibration !== false, bluetooth: c.bluetooth ?? "tap" };
+    this._form.data = { finish: c.finish, finish_extent: c.finish_extent ?? "card", features_style: c.features_style ?? "match", vibration: c.vibration !== false, bluetooth: c.bluetooth ?? "tap", standby_badge: !!c.standby_badge };
     const label = RANDOMIZE_LABEL[c.finish];
     this.shadowRoot.getElementById("row").style.display = label ? "" : "none";
     this.shadowRoot.getElementById("randomize").textContent = label ?? "";
@@ -2079,108 +2099,236 @@ class SvsCardEditor extends HTMLElement {
   }
 }
 
-class SvsPanelCardEditor extends SvsCardEditor {
+// Material Design Icons used by the panel editor
+const MDI = {
+  plus: "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z",
+  left: "M20,11V13H8L13.5,18.5L12.08,19.92L4.16,12L12.08,4.08L13.5,5.5L8,11H20Z",
+  right: "M4,11V13H16L10.5,18.5L11.92,19.92L19.84,12L11.92,4.08L10.5,5.5L16,11H4Z",
+  delete: "M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z",
+};
+
+/** The tile card's editor (without the options the SVS card sets), once loaded. */
+async function createTileEditor(entity) {
+  const helpers = await window.loadCardHelpers();
+  helpers.createCardElement({ type: "tile", entity });
+  await customElements.whenDefined("hui-tile-card");
+  const original = await customElements.get("hui-tile-card").getConfigElement();
+  const type = tileEditorType();
+  return type ? document.createElement(type) : original;
+}
+
+/**
+ * The panel card's editor, laid out like Home Assistant's stack card editor:
+ * a tab for the card itself (the SVS Subwoofer card's editor, plus how the
+ * rows open), and a tab for each subwoofer row, which is edited like any
+ * tile card (name, state content, features). The plus button adds a
+ * subwoofer; a subwoofer's tab can move it or remove it.
+ */
+class SvsPanelCardEditor extends HTMLElement {
   constructor() {
     super();
-    const panel = document.createElement("ha-expansion-panel");
-    panel.outlined = true;
-    panel.expanded = true;
-    panel.innerHTML = `<div slot="header" role="heading" aria-level="3">Subwoofers</div><div class="content"><ha-form></ha-form></div>`;
-    this.shadowRoot.append(panel);
-    this._membersForm = panel.querySelector("ha-form");
-    this._membersForm.computeLabel = (s) => s.label ?? s.name;
-    this._membersForm.computeHelper = (s) => s.helper;
-    this._membersForm.addEventListener("value-changed", (ev) => {
-      ev.stopPropagation();
-      const v = ev.detail.value;
-      const members = v.members ?? [];
-      // A name left empty uses the default name. When the subwoofers were
-      // added, removed or reordered, the name fields still hold the old
-      // order, so each subwoofer keeps the name it had.
-      const names = {};
-      const sameRows = JSON.stringify(members) === JSON.stringify(this._config.members ?? []);
-      members.forEach((id, i) => {
-        const name = sameRows ? (v[`name_${i}`] ?? "").trim() : this._config.member_names?.[id] ?? "";
-        if (name) names[id] = name;
-      });
-      const changes = {
-        members,
-        member_features: v.member_features ?? [],
-        member_state_content: v.member_state_content,
-        members_toggle: v.members_toggle !== false,
-        members_open: v.members_open !== false,
-        member_names: names,
-      };
-      if (!changes.member_state_content?.length) delete changes.member_state_content;
-      this._update(changes);
-      if (!Object.keys(names).length) {
-        delete this._config.member_names;
-        this._fire();
-      }
-    });
+    this.attachShadow({ mode: "open" });
+    this.shadowRoot.innerHTML = `
+      <style>
+        .toolbar { display: flex; align-items: center; gap: 4px; border-bottom: 1px solid var(--divider-color); margin-bottom: 16px; }
+        .tabs { display: flex; flex: 1; gap: 4px; overflow-x: auto; }
+        .tab {
+          border: 0; background: none; padding: 12px 16px; cursor: pointer; white-space: nowrap;
+          color: var(--secondary-text-color); font: inherit; font-weight: 500; border-bottom: 2px solid transparent;
+        }
+        .tab[aria-selected="true"] { color: var(--primary-color); border-bottom-color: var(--primary-color); }
+        .tab:focus-visible { outline: 2px solid var(--primary-color); outline-offset: -2px; }
+        .row-options { display: flex; justify-content: flex-end; gap: 4px; margin-bottom: 8px; }
+        ha-form { display: block; margin-top: 24px; }
+      </style>
+      <div class="toolbar">
+        <div class="tabs" role="tablist"></div>
+        <ha-icon-button id="add"></ha-icon-button>
+      </div>
+      <div id="body"></div>`;
+    this._tabs = this.shadowRoot.querySelector(".tabs");
+    this._body = this.shadowRoot.getElementById("body");
+    const add = this.shadowRoot.getElementById("add");
+    add.path = MDI.plus;
+    add.label = "Add a subwoofer";
+    add.addEventListener("click", () => this._select("add"));
+    this._selected = "card";
   }
 
   set hass(hass) {
-    super.hass = hass;
-    if (this._membersForm) {
-      this._membersForm.hass = hass;
-      this._renderMembers();
+    this._hass = hass;
+    if (this._cardEditor) this._cardEditor.hass = hass;
+    if (this._rowsForm) this._rowsForm.hass = hass;
+    if (this._addForm) this._addForm.hass = hass;
+    if (this._memberEditor) this._memberEditor.hass = withSubwooferAttributes(hass, this._member?.entity);
+    if (!this._built) this._show();
+  }
+
+  set lovelace(lovelace) {
+    this._lovelace = lovelace;
+    if (this._cardEditor) this._cardEditor.lovelace = lovelace;
+    if (this._memberEditor) this._memberEditor.lovelace = lovelace;
+  }
+
+  setConfig(config) {
+    // The configuration this editor just sent comes back here: nothing to redraw
+    if (this._config && JSON.stringify(config) === JSON.stringify(this._config)) return;
+    this._config = config;
+    this._show();
+  }
+
+  get _members() {
+    return (this._config?.members ?? []).filter((m) => m && typeof m === "object" && m.entity);
+  }
+
+  _renderTabs() {
+    const defaults = defaultMemberNames(this._hass, this._members.map((m) => m.entity));
+    const tabs = [["card", "Card"], ...this._members.map((m, i) => [i, m.name || defaults[m.entity] || m.entity])];
+    this._tabs.replaceChildren(...tabs.map(([key, label]) => {
+      const tab = document.createElement("button");
+      tab.type = "button";
+      tab.className = "tab";
+      tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-selected", String(this._selected === key));
+      tab.textContent = label;
+      tab.addEventListener("click", () => this._select(key));
+      return tab;
+    }));
+  }
+
+  _select(key) {
+    this._selected = key;
+    this._show();
+  }
+
+  _show() {
+    if (!this._config || !this._hass) return;
+    this._built = true;
+    if (typeof this._selected === "number" && !this._members[this._selected]) this._selected = "card";
+    this._renderTabs();
+    this._memberEditor = undefined;
+    if (this._selected === "card") this._showCard();
+    else if (this._selected === "add") this._showAdd();
+    else this._showMember(this._selected);
+  }
+
+  // The card itself: the SVS Subwoofer card's editor, and how the rows open
+  _showCard() {
+    if (!this._cardEditor) {
+      this._cardEditor = document.createElement(EDITOR_TYPE);
+      this._cardEditor.addEventListener("config-changed", (ev) => {
+        ev.stopPropagation();
+        const keep = Object.fromEntries(PANEL_KEYS.filter((k) => k in this._config).map((k) => [k, this._config[k]]));
+        this._fire({ ...ev.detail.config, ...keep, type: this._config.type });
+      });
+      this._rowsForm = document.createElement("ha-form");
+      this._rowsForm.computeLabel = (s) => s.label;
+      this._rowsForm.computeHelper = (s) => s.helper;
+      this._rowsForm.addEventListener("value-changed", (ev) => {
+        ev.stopPropagation();
+        const v = ev.detail.value;
+        this._fire({ ...this._config, members_toggle: v.members_toggle !== false, members_open: v.members_open !== false });
+      });
     }
-  }
-
-  get hass() {
-    return this._hass;
-  }
-
-  _render() {
-    super._render();
-    this._renderMembers();
-  }
-
-  _renderMembers() {
-    if (!this._membersForm || !this._config) return;
-    const options = sortPairs(subwoofers(this._hass)).map(([value, label]) => ({ value, label }));
-    const members = (this._config.members ?? []).filter((id) => this._hass?.states[id]);
-    const defaults = defaultMemberNames(this._hass, members);
-    // The state content picker lists the subwoofer's preset, standby mode and volume too
-    if (members.length) this._membersForm.hass = withSubwooferAttributes(this._hass, members[0]);
-    this._membersForm.schema = [
-      {
-        name: "members", label: "Subwoofers shown, in order",
-        helper: "Rows below the card, one per subwoofer. Leave empty for none.",
-        selector: { select: { multiple: true, reorder: true, mode: "dropdown", options } },
-      },
-      ...members.map((id, i) => ({
-        name: `name_${i}`, label: `Name for ${defaults[id]}`,
-        helper: "Leave empty to use this name.",
-        selector: { text: {} },
-      })),
-      {
-        name: "member_features", label: "Controls on each row, in order",
-        helper: "They use the same settings as the card's own features of that kind.",
-        selector: { select: { multiple: true, reorder: true, mode: "dropdown", options: MEMBER_FEATURES.map(([value, label]) => ({ value, label })) } },
-      },
-      ...(members.length ? [{
-        name: "member_state_content", label: "State content on each row",
-        selector: { ui_state_content: { entity_id: members[0], allow_name: false } },
-      }] : []),
+    const card = { ...this._config };
+    for (const key of PANEL_KEYS) delete card[key];
+    this._cardEditor.hass = this._hass;
+    if (this._lovelace) this._cardEditor.lovelace = this._lovelace;
+    this._cardEditor.setConfig(card);
+    this._rowsForm.hass = this._hass;
+    this._rowsForm.schema = [
       {
         name: "members_toggle", label: "Tap the card to show or hide the subwoofers",
-        helper: "The card's tap behavior is replaced while this is on.",
+        helper: "This replaces the card's tap behavior.",
         selector: { boolean: {} },
       },
       ...(this._config.members_toggle === false ? [] : [
         { name: "members_open", label: "Show the subwoofers when the page opens", selector: { boolean: {} } },
       ]),
     ];
-    this._membersForm.data = {
-      ...Object.fromEntries(members.map((id, i) => [`name_${i}`, this._config.member_names?.[id] ?? ""])),
-      member_state_content: this._config.member_state_content ?? ["state", "preset", "standby_mode"],
-      members_toggle: this._config.members_toggle !== false,
-      members: this._config.members ?? [],
-      member_features: this._config.member_features ?? ["volume"],
-      members_open: this._config.members_open !== false,
+    this._rowsForm.data = { members_toggle: this._config.members_toggle !== false, members_open: this._config.members_open !== false };
+    this._body.replaceChildren(this._cardEditor, this._rowsForm);
+  }
+
+  // Adding a subwoofer: the subwoofers not yet in the panel, by name
+  _showAdd() {
+    if (!this._addForm) {
+      this._addForm = document.createElement("ha-form");
+      this._addForm.computeLabel = (s) => s.label;
+      this._addForm.addEventListener("value-changed", (ev) => {
+        ev.stopPropagation();
+        const entity = ev.detail.value.entity;
+        if (!entity) return;
+        const members = [...this._members, newMember(entity)];
+        this._selected = members.length - 1;
+        this._fire({ ...this._config, members });
+        this._show();
+      });
+    }
+    const taken = new Set(this._members.map((m) => m.entity));
+    const options = sortPairs(subwoofers(this._hass)).filter(([id]) => !taken.has(id)).map(([value, label]) => ({ value, label }));
+    this._addForm.hass = this._hass;
+    this._addForm.schema = [{ name: "entity", label: "Subwoofer", selector: { select: { mode: "dropdown", options } } }];
+    this._addForm.data = {};
+    this._body.replaceChildren(this._addForm);
+  }
+
+  // A subwoofer's row: edited like a tile card, with move and remove buttons
+  async _showMember(index) {
+    const member = this._members[index];
+    this._member = member;
+    const options = document.createElement("div");
+    options.className = "row-options";
+    const button = (path, label, disabled, onClick) => {
+      const b = document.createElement("ha-icon-button");
+      b.path = path;
+      b.label = label;
+      b.disabled = disabled;
+      b.addEventListener("click", onClick);
+      return b;
     };
+    const move = (step) => {
+      const members = [...this._members];
+      const [item] = members.splice(index, 1);
+      members.splice(index + step, 0, item);
+      this._selected = index + step;
+      this._fire({ ...this._config, members });
+      this._show();
+    };
+    options.append(
+      button(MDI.left, "Move before", index === 0, () => move(-1)),
+      button(MDI.right, "Move after", index === this._members.length - 1, () => move(1)),
+      button(MDI.delete, "Remove this subwoofer", false, () => {
+        const members = this._members.filter((_, i) => i !== index);
+        this._selected = "card";
+        this._fire({ ...this._config, members });
+        this._show();
+      }),
+    );
+    this._body.replaceChildren(options);
+    const editor = await createTileEditor(member.entity);
+    if (this._selected !== index) return;  // another tab was chosen meanwhile
+    editor.addEventListener("config-changed", (ev) => {
+      ev.stopPropagation();
+      const next = { ...ev.detail.config };
+      delete next.type;
+      delete next.show_entity_picture;
+      const members = [...this._members];
+      members[index] = next;
+      this._member = next;
+      this._fire({ ...this._config, members });
+      this._renderTabs();
+    });
+    editor.hass = withSubwooferAttributes(this._hass, member.entity);
+    if (this._lovelace) editor.lovelace = this._lovelace;
+    editor.setConfig(tileConfig({ ...member, type: "tile" }));
+    this._memberEditor = editor;
+    this._body.append(editor);
+  }
+
+  _fire(config) {
+    this._config = config;
+    fire(this, "config-changed", { config });
   }
 }
 
@@ -2193,6 +2341,7 @@ function explicit(config) {
   c.finish = FINISHES.some(([id]) => id === c.finish) ? c.finish : "none";
   c.vibration = c.vibration !== false;
   c.bluetooth = BLUETOOTH.some(([id]) => id === c.bluetooth) ? c.bluetooth : "tap";
+  c.standby_badge = !!c.standby_badge;
   if (c.finish === "none") {
     delete c.pattern;
     delete c.finish_extent;
