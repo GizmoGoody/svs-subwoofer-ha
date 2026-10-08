@@ -43,12 +43,11 @@ const HA_COLORS = [
   "teal", "green", "light-green", "lime", "yellow", "amber", "orange", "deep-orange", "brown",
   "light-grey", "grey", "dark-grey", "blue-grey", "black", "white", "disabled",
 ];
-// Named colors light enough to need dark text on top
-const LIGHT_COLORS = ["yellow", "amber", "lime", "light-green", "white", "light-grey"];
 /**
- * Text that reads on a filled button: dark on a light color, white on a dark
- * one. The color is the one the button actually shows (a theme variable such
- * as the feature color, resolved by the browser).
+ * Text that reads on a filled button: dark or white, whichever contrasts
+ * more with the color (WCAG contrast ratio). The color is the one the button
+ * actually shows (a theme variable such as the feature color, resolved by
+ * the browser).
  */
 let colorProbe;
 function textOn(el, cssValue) {
@@ -60,8 +59,16 @@ function textOn(el, cssValue) {
   colorProbe.fillStyle = resolved;
   const [r, g, b] = (colorProbe.fillStyle.match(/[\d.]+/g) ?? [0, 0, 0]).map(Number);
   const hex = colorProbe.fillStyle.startsWith("#") ? colorProbe.fillStyle.slice(1).match(/../g).map((h) => parseInt(h, 16)) : [r, g, b];
-  const luma = (0.299 * hex[0] + 0.587 * hex[1] + 0.114 * hex[2]) / 255;
-  return luma > 0.6 ? "rgba(0, 0, 0, .85)" : "#fff";
+  const light = luminance(hex);
+  // The dark text is black at 85 %, so on the color it is a little lighter
+  const dark = luminance(hex.map((v) => v * 0.15));
+  return (light + 0.05) / (dark + 0.05) > 1.05 / (light + 0.05) ? "rgba(0, 0, 0, .85)" : "#fff";
+}
+
+/** WCAG relative luminance of an [r, g, b] color (0 to 255). */
+function luminance([r, g, b]) {
+  const lin = (v) => ((v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
 }
 
 /**
@@ -84,7 +91,6 @@ function applyTextOn(el, rerender) {
 }
 
 const cssColor = (color) => (HA_COLORS.includes(color) ? `var(--${color}-color)` : color);
-const isLight = (color) => LIGHT_COLORS.includes(color) || /^#(f|e)/i.test(color || "");
 
 // "Default" is the subwoofer's factory settings (SVS's fourth preset slot):
 // not shown unless chosen
@@ -190,7 +196,7 @@ const BUTTON_ROW_CSS = `
     position: relative; overflow: hidden; display: grid; place-items: center;
     border-radius: var(--feature-border-radius, 12px);
     background: var(--svs-feature-backing, transparent);
-    color: var(--primary-text-color); font: inherit; font-size: var(--ha-font-size-s, 12px); font-weight: 500;
+    color: var(--svs-text, var(--primary-text-color)); font: inherit; font-size: var(--ha-font-size-s, 12px); font-weight: 500;
   }
   button::before { content: ""; position: absolute; inset: 0; background: var(--c, var(--feature-color)); opacity: .2; transition: opacity 180ms ease-in-out; }
   button:hover::before { opacity: .35; }
@@ -289,7 +295,8 @@ class SvsPresetButtons extends HTMLElement {
       button.setAttribute("aria-pressed", String(stateObj?.state === name));
       if (look.color) {
         button.style.setProperty("--c", cssColor(look.color));
-        if (isLight(look.color)) button.style.setProperty("--svs-on-color", "rgba(0, 0, 0, .85)");
+        const fg = textOn(this, cssColor(look.color));
+        if (fg) button.style.setProperty("--svs-on-color", fg);
       }
       if (look.icon) {
         const icon = document.createElement("ha-icon");
@@ -328,7 +335,8 @@ class SvsPresetButtons extends HTMLElement {
     button.setAttribute("aria-pressed", String(active));
     if (look.color) {
       button.style.setProperty("--c", cssColor(look.color));
-      if (isLight(look.color)) button.style.setProperty("--svs-on-color", "rgba(0, 0, 0, .85)");
+      const fg = textOn(this, cssColor(look.color));
+      if (fg) button.style.setProperty("--svs-on-color", fg);
     }
     if (look.icon) {
       const icon = document.createElement("ha-icon");
@@ -473,7 +481,7 @@ class SvsVolume extends HTMLElement {
           pointer-events: none; user-select: none; position: absolute; z-index: 3;
           top: -4px; left: calc(min(max(var(--svs-tip, 0) * 100%, 0%), 100%));
           transform: translate3d(-50%, -100%, 0);
-          background-color: var(--clear-background-color); color: var(--primary-text-color);
+          background-color: var(--svs-tip-background, var(--clear-background-color)); color: var(--svs-text, var(--primary-text-color));
           font-size: var(--control-slider-tooltip-font-size, var(--ha-font-size-m, 14px));
           border-radius: var(--ha-border-radius-lg, 12px); padding: .2em .4em;
           opacity: 0; white-space: nowrap; box-shadow: 0 2px 5px rgba(0, 0, 0, .2);
@@ -1303,8 +1311,16 @@ class SvsCard extends HTMLElement {
           --ha-card-box-shadow: none; --ha-card-border-color: transparent;
           --ha-card-backdrop-filter: none;
         }
-        .tile.dark { --primary-text-color: rgba(255, 255, 255, .95); --secondary-text-color: rgba(235, 235, 240, .7); text-shadow: 0 1px 2px rgba(0, 0, 0, .8); }
-        .tile.light { --primary-text-color: rgba(0, 0, 0, .85); --secondary-text-color: rgba(40, 40, 48, .62); }
+        /* On a finish, its own text colors (--svs-text for the controls, which
+           a theme does not set), and the value callout in the finish's tone */
+        .tile.dark {
+          --primary-text-color: rgba(255, 255, 255, .95); --secondary-text-color: rgba(235, 235, 240, .7);
+          --svs-text: rgba(255, 255, 255, .95); --svs-tip-background: #2b2c30; text-shadow: 0 1px 2px rgba(0, 0, 0, .8);
+        }
+        .tile.light {
+          --primary-text-color: rgba(0, 0, 0, .85); --secondary-text-color: rgba(40, 40, 48, .62);
+          --svs-text: rgba(0, 0, 0, .85); --svs-tip-background: #f6f7f9;
+        }
         /* Flat and Inset: no finish shows through a control */
         .tile.dark.solid { --svs-feature-backing: ${BACKING.dark}; }
         .tile.light.solid { --svs-feature-backing: ${BACKING.light}; }
