@@ -347,7 +347,7 @@ class SvsPresetButtonsEditor extends HTMLElement {
         ] } },
       },
       {
-        name: "presets_shown", label: "Presets shown, in order",
+        name: "presets_shown", label: "Presets",
         selector: { select: { multiple: true, reorder: true, mode: "dropdown", options: names } },
       },
       ...names.map((name) => ({
@@ -959,15 +959,16 @@ function drawFabric(px, w, h, pattern) {
 
 /**
  * A perforated metal speaker grille: hexagonal holes with a vertex straight
- * up and down, light showing through them, on a dark metal web. The metal
- * reflects a little more than fabric; the reflection's angle and place come
- * from the pattern.
+ * up and down, dark behind them, in a brushed metal web. The web carries a
+ * strong reflection band and each hole's rim catches the light on one side,
+ * so the grille stands out; the reflection's angle and place come from the
+ * pattern.
  */
 function drawGrille(px, w, h, pattern) {
   const r = rng(pattern * 31 + 7), noise = valueNoise(pattern * 7 + 5);
   const R = 6, across = Math.sqrt(3) * R, down = 1.5 * R, hole = R * .8;
   const angle = r() * Math.PI, ca = Math.cos(angle), sa = Math.sin(angle);
-  const cx = r() * w, cy = r() * h, reach = Math.max(w, h) * (.5 + r() * .5);
+  const cx = r() * w, cy = r() * h, reach = Math.max(w, h) * (.45 + r() * .4);
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       // The nearest hole center (rows offset by half a hole)
@@ -986,13 +987,14 @@ function drawGrille(px, w, h, pattern) {
       const d = ((x - cx) * ca + (y - cy) * sa) / reach, sheen = Math.max(0, 1 - d * d);
       let t;
       if (dist < 1) {
-        const edge = Math.min(1, (1 - dist) * 5);
-        t = 30 + (132 + (noise(bx * .05, by * .05, 2) - .5) * 18 + sheen * 26 - 30) * edge;
+        const edge = Math.min(1, (1 - dist) * 4);
+        t = 18 + (46 + (noise(bx * .05, by * .05, 2) - .5) * 10 + sheen * 14 - 18) * edge;
+        if (dist > .82) t += ((x - bx) + (y - by)) / hole > 0 ? 16 * sheen + 6 : -6;
       } else {
-        t = 26 + sheen * 22 + (noise(x * .5, y * .5, 1) - .5) * 6;
+        t = 34 + sheen * 70 + (noise(x * .5, y * .5, 1) - .5) * 8 + (noise(x * .05 + 9, y * .05, 2) - .5) * 10;
       }
       const o = (y * w + x) * 4;
-      px[o] = t; px[o + 1] = t; px[o + 2] = t + 2; px[o + 3] = 255;
+      px[o] = t; px[o + 1] = t; px[o + 2] = t + 3; px[o + 3] = 255;
     }
   }
 }
@@ -1018,7 +1020,7 @@ const BT_OFF = "M13 5.83l1.88 1.88-1.6 1.6 1.41 1.41 3.02-3.02L12 2h-1v5.03l2 2z
 // Options this card adds to the tile card's
 // The prototype panel card's own options, kept out of the tile card too
 const PANEL_KEYS = ["members", "members_open", "members_toggle"];
-const OWN_KEYS = ["finish", "pattern", "vibration", "bluetooth", "standby_badge", "finish_extent", "features_style", "_embedded", ...PANEL_KEYS];
+const OWN_KEYS = ["finish", "pattern", "vibration", "bluetooth", "standby_badge", "finish_extent", "features_style", "_embedded", "_member_entities", ...PANEL_KEYS];
 // The same keys and values as The Lampster card
 const FEATURES_STYLES = [["match", "Match style"], ["flat", "Flat"], ["inset", "Inset"]];
 // The finish's base color, without grain or reflections, for Flat
@@ -1096,6 +1098,14 @@ function findDeep(root, selector, depth = 5) {
   return null;
 }
 
+// Option names in this card's own namespace: one that is not a current option
+// is a mistake (a typo, or an option that was renamed), so the card says so
+const OWN_PREFIXES = ["member", "finish", "bluetooth", "standby", "vibration", "pattern", "features_style", "_"];
+function checkOptions(config, known) {
+  const unknown = Object.keys(config).filter((k) => OWN_PREFIXES.some((p) => k.startsWith(p)) && !known.includes(k));
+  if (unknown.length) throw new Error(`Unknown option${unknown.length > 1 ? "s" : ""}: ${unknown.join(", ")}`);
+}
+
 const reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 // ---------------------------------------------------------------------------
@@ -1158,6 +1168,7 @@ class SvsCard extends HTMLElement {
         }
         .badge.on { display: grid; }
         .badge.connected { color: var(--blue-color, #2196f3); }
+        .badge.some { color: var(--warning-color, #ffa600); }
         .badge.tappable { pointer-events: auto; cursor: pointer; }
         /* A larger area to tap than the badge itself */
         .badge.tappable::before { content: ""; position: absolute; inset: -8px; }
@@ -1209,6 +1220,7 @@ class SvsCard extends HTMLElement {
 
   setConfig(config) {
     if (!config?.entity) throw new Error("Choose an SVS Subwoofer entity");
+    checkOptions(config, OWN_KEYS.filter((k) => !PANEL_KEYS.includes(k)));
     const finish = config.finish ?? "none";
     if (!FINISHES.some(([id]) => id === finish)) throw new Error(`Unknown finish: ${finish}`);
     this._config = { ...config, finish };
@@ -1426,18 +1438,34 @@ class SvsCard extends HTMLElement {
    * default) a tap connects or disconnects. A group has no connection of its
    * own, so it has no badge.
    */
+  /**
+   * The connection sensors the badge shows: the subwoofer's own, or for a
+   * group in the panel card, those of the subwoofers in its rows.
+   */
+  get _connectionSensors() {
+    const own = this._entities.connected;
+    if (own) return [own];
+    return (this._config?._member_entities ?? []).map((id) => sibling(this._hass, id, "connected")).filter(Boolean);
+  }
+
   _updateBadge() {
     const mode = this._config?.bluetooth ?? "tap";
-    const id = this._entities.connected;
-    const connected = !!id && this._hass?.states[id]?.state === "on";
-    const show = !!id && (mode === "tap" || (mode === "status" && !connected));
+    const sensors = this._connectionSensors;
+    const on = sensors.filter((id) => this._hass?.states[id]?.state === "on").length;
+    const connected = sensors.length > 0 && on === sensors.length;
+    const some = on > 0 && !connected;
+    const show = sensors.length > 0 && (mode === "tap" || (mode === "status" && !connected));
     this._badge.classList.toggle("on", show);
     this._badge.classList.toggle("connected", connected);
+    this._badge.classList.toggle("some", some);
     this._badge.classList.toggle("tappable", mode === "tap");
-    this._badge.querySelector("path").setAttribute("d", connected ? BT_ON : BT_OFF);
-    const label = connected
-      ? (mode === "tap" ? "Connected. Select to disconnect" : "Connected")
-      : (mode === "tap" ? "Not connected. Select to connect" : "Not connected");
+    this._badge.querySelector("path").setAttribute("d", connected || some ? BT_ON : BT_OFF);
+    const group = sensors.length > 1;
+    const status = connected
+      ? (group ? "All connected" : "Connected")
+      : some ? `${on} of ${sensors.length} connected` : (group ? "None connected" : "Not connected");
+    const label = mode !== "tap" ? status
+      : connected ? `${status}. Select to disconnect` : `${status}. Select to connect`;
     this._badge.title = label;
     this._badge.setAttribute("aria-label", label);
     this._badge.tabIndex = mode === "tap" ? 0 : -1;
@@ -1452,12 +1480,15 @@ class SvsCard extends HTMLElement {
     if (show || letter) this._placeBadge();
   }
 
+  // Connect what is not connected; when everything is, disconnect it all
   _toggleConnection() {
     if ((this._config?.bluetooth ?? "tap") !== "tap" || !this._hass) return;
-    const id = this._entities.connected;
-    const connected = this._hass.states[id]?.state === "on";
-    const button = sibling(this._hass, this._config.entity, connected ? "disconnect" : "reconnect");
-    if (button) this._hass.callService("button", "press", { entity_id: button });
+    const sensors = this._connectionSensors;
+    const off = sensors.filter((id) => this._hass.states[id]?.state !== "on");
+    const targets = off.length ? off : sensors;
+    const role = off.length ? "reconnect" : "disconnect";
+    const buttons = targets.map((id) => sibling(this._hass, id, role)).filter(Boolean);
+    if (buttons.length) this._hass.callService("button", "press", { entity_id: buttons });
   }
 
   /**
@@ -1796,10 +1827,17 @@ class SvsPanelCard extends HTMLElement {
 
   setConfig(config) {
     if (!config?.entity) throw new Error("Choose an SVS Subwoofer entity");
+    checkOptions(config, OWN_KEYS.filter((k) => !k.startsWith("_")));
+    if (config.members !== undefined && (!Array.isArray(config.members) || config.members.some((m) => !m || typeof m !== "object" || !m.entity))) {
+      throw new Error("members must be a list of card settings, each with an entity");
+    }
     this._config = config;
     // The header: the SVS Subwoofer card, without the panel's own options
     const header = { ...config, type: "custom:svs-subwoofer-card", _embedded: true };
     for (const key of PANEL_KEYS) delete header[key];
+    // The header shows its rows' Bluetooth connections together
+    const rows = (config.members ?? []).map((m) => m?.entity).filter(Boolean);
+    if (rows.length) header._member_entities = rows;
     // A tap on the card shows or hides the rows (instead of its own tap action)
     if (config.members_toggle !== false && (config.members ?? []).some((m) => m?.entity)) {
       header.tap_action = { action: "fire-dom-event", svs_subwoofer_panel: "toggle" };
@@ -2105,6 +2143,7 @@ const MDI = {
   left: "M20,11V13H8L13.5,18.5L12.08,19.92L4.16,12L12.08,4.08L13.5,5.5L8,11H20Z",
   right: "M4,11V13H16L10.5,18.5L11.92,19.92L19.84,12L11.92,4.08L10.5,5.5L16,11H4Z",
   delete: "M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z",
+  copy: "M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z",
 };
 
 /** The tile card's editor (without the options the SVS card sets), once loaded. */
@@ -2182,8 +2221,8 @@ class SvsPanelCardEditor extends HTMLElement {
   }
 
   _renderTabs() {
-    const defaults = defaultMemberNames(this._hass, this._members.map((m) => m.entity));
-    const tabs = [["card", "Card"], ...this._members.map((m, i) => [i, m.name || defaults[m.entity] || m.entity])];
+    // Numbered, like the vertical stack card's tabs
+    const tabs = [["card", "Card"], ...this._members.map((m, i) => [i, String(i + 1)])];
     this._tabs.replaceChildren(...tabs.map(([key, label]) => {
       const tab = document.createElement("button");
       tab.type = "button";
@@ -2220,6 +2259,9 @@ class SvsPanelCardEditor extends HTMLElement {
         ev.stopPropagation();
         const keep = Object.fromEntries(PANEL_KEYS.filter((k) => k in this._config).map((k) => [k, this._config[k]]));
         this._fire({ ...ev.detail.config, ...keep, type: this._config.type });
+        // Editors update their fields only when handed their configuration
+        // back (Home Assistant does this for a card's own editor)
+        this._cardEditor.setConfig(ev.detail.config);
       });
       this._rowsForm = document.createElement("ha-form");
       this._rowsForm.computeLabel = (s) => s.label;
@@ -2239,7 +2281,7 @@ class SvsPanelCardEditor extends HTMLElement {
     this._rowsForm.schema = [
       {
         name: "members_toggle", label: "Tap the card to show or hide the subwoofers",
-        helper: "This replaces the card's tap behavior.",
+        helper: "While this is on, a tap on the card does this instead of its Tap behavior (under Interactions). Icon tap behavior still works.",
         selector: { boolean: {} },
       },
       ...(this._config.members_toggle === false ? [] : [
@@ -2295,7 +2337,22 @@ class SvsPanelCardEditor extends HTMLElement {
       this._fire({ ...this._config, members });
       this._show();
     };
+    // Duplicate: the same settings for the next subwoofer not yet in the
+    // panel (by name), so only the entity needs changing, if anything
+    const duplicate = () => {
+      const taken = new Set(this._members.map((m) => m.entity));
+      const next = sortPairs(subwoofers(this._hass)).map(([id]) => id).find((id) => !taken.has(id));
+      const copy = JSON.parse(JSON.stringify(member));
+      delete copy.name;
+      if (next) copy.entity = next;
+      const members = [...this._members];
+      members.splice(index + 1, 0, copy);
+      this._selected = index + 1;
+      this._fire({ ...this._config, members });
+      this._show();
+    };
     options.append(
+      button(MDI.copy, "Duplicate", false, duplicate),
       button(MDI.left, "Move before", index === 0, () => move(-1)),
       button(MDI.right, "Move after", index === this._members.length - 1, () => move(1)),
       button(MDI.delete, "Remove this subwoofer", false, () => {
@@ -2317,7 +2374,10 @@ class SvsPanelCardEditor extends HTMLElement {
       members[index] = next;
       this._member = next;
       this._fire({ ...this._config, members });
-      this._renderTabs();
+      // The tile editor shows a change (a removed state content, an added
+      // feature) only once its configuration is handed back
+      editor.setConfig(ev.detail.config);
+      if (ev.detail.config.entity !== member.entity) editor.hass = withSubwooferAttributes(this._hass, ev.detail.config.entity);
     });
     editor.hass = withSubwooferAttributes(this._hass, member.entity);
     if (this._lovelace) editor.lovelace = this._lovelace;
