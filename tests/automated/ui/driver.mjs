@@ -84,14 +84,27 @@ try {
     source: `localStorage.setItem("hassTokens", ${JSON.stringify(JSON.stringify(tokens))});`,
   });
   await send("Page.navigate", { url: `${base}/lovelace/0` });
-  await evaluate(`(async () => {
+  const loaded = await evaluate(`(async () => {
     for (let i = 0; i < 600; i++) {
       const hass = document.querySelector("home-assistant")?.hass;
-      if (hass?.connected && customElements.get("svs-subwoofer-card")) return true;
+      if (hass?.connected && customElements.get("svs-subwoofer-card")) return { ok: true };
       await new Promise((r) => setTimeout(r, 100));
     }
-    throw new Error("Home Assistant or the SVS Subwoofer card did not load");
+    const hass = document.querySelector("home-assistant")?.hass;
+    return {
+      ok: false, url: location.href, title: document.title,
+      app: !!document.querySelector("home-assistant"), hass: !!hass, connected: !!hass?.connected,
+      card: !!customElements.get("svs-subwoofer-card"),
+      resources: [...document.querySelectorAll("script")].map((s) => s.src).filter(Boolean),
+      body: document.body?.innerText?.slice(0, 500),
+    };
   })()`);
+  if (!loaded.ok) {
+    const shot = await send("Page.captureScreenshot", { format: "png" });
+    writeFileSync(join(outDir, "not-loaded.png"), Buffer.from(shot.data, "base64"));
+    writeFileSync(join(outDir, "console.log"), logs.join("\n"));
+    throw new Error(`Home Assistant or the SVS Subwoofer card did not load: ${JSON.stringify(loaded)}`);
+  }
   await evaluate(readFileSync(pageScript, "utf8"));
 
   const report = await evaluate("window.svsUiTests()");
