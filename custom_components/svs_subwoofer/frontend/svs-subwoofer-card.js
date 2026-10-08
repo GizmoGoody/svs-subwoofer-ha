@@ -562,8 +562,11 @@ class SvsVolumeEditor extends HTMLElement {
   }
 
   setConfig(config) {
+    // The configuration this editor just sent comes back here: the fields
+    // already show it (an emptied field included), so they are left alone
+    const echo = this._config && JSON.stringify(config) === JSON.stringify(this._config);
     this._config = config;
-    this._render();
+    if (!echo || !this._form) this._render();
   }
 
   _render() {
@@ -622,10 +625,14 @@ class SvsVolumeEditor extends HTMLElement {
     ev.stopPropagation();
     const v = ev.detail.value;
     this._note.textContent = "";
+    // An emptied field stays empty while the user types; the saved
+    // configuration keeps the previous value (or the default) until then
+    const previousRanges = colorRanges(this._config);
+    const keep = (value, fallback) => (Number.isFinite(value) ? value : fallback);
     let config = { type: this._config.type };
     // The range is kept only when it differs from the full -60 to 0 dB; ends
     // entered the other way round are swapped
-    let min = Number.isFinite(v.min) ? v.min : -60, max = Number.isFinite(v.max) ? v.max : 0;
+    let min = keep(v.min, this._config.min ?? -60), max = keep(v.max, this._config.max ?? 0);
     if (min > max) {
       [min, max] = [max, min];
       this._note.textContent = "Slider from and Slider to were the other way round, so they were swapped.";
@@ -637,8 +644,8 @@ class SvsVolumeEditor extends HTMLElement {
       if (max !== 0) config.max = max;
     }
     if (v.colored) {
-      let a = Number.isFinite(v.split_1) ? v.split_1 : -30;
-      let b = Number.isFinite(v.split_2) ? v.split_2 : -15;
+      let a = keep(v.split_1, previousRanges[0]?.below ?? -30);
+      let b = keep(v.split_2, previousRanges[1]?.below ?? -15);
       let c1 = v.color_1 ?? "green", c3 = v.color_3 ?? "red";
       // Splits entered the other way round are put back in order, and the
       // outer colors move with them, so each color stays on the volumes meant
@@ -655,8 +662,14 @@ class SvsVolumeEditor extends HTMLElement {
         { color: c3 },
       ];
     }
+    const toggled = !!v.colored !== previousRanges.length > 0;
     this._config = config;
-    this._render();
+    if (toggled) {
+      this._render();
+    } else {
+      // Keep what is in the fields (an emptied field included)
+      this._form.data = v;
+    }
     fire(this, "config-changed", { config });
   }
 }
@@ -901,7 +914,11 @@ const BT_ON = "M14.88,16.29L13,18.17V14.41M13,5.83L14.88,7.71L13,9.58M17.71,7.71
 const BT_OFF = "M13 5.83l1.88 1.88-1.6 1.6 1.41 1.41 3.02-3.02L12 2h-1v5.03l2 2zM5.41 4L4 5.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l4.29-4.29 2.3 2.29L20 18.59 5.41 4zM13 18.17v-3.76l1.88 1.88L13 18.17z";
 
 // Options this card adds to the tile card's
-const OWN_KEYS = ["finish", "pattern", "vibration", "bluetooth", "finish_extent"];
+const OWN_KEYS = ["finish", "pattern", "vibration", "bluetooth", "finish_extent", "features_style"];
+// The same keys and values as The Lampster card
+const FEATURES_STYLES = [["match", "Match style"], ["flat", "Flat"], ["inset", "Inset"]];
+// The finish's base color, without grain or reflections, for Flat
+const FLAT = { black_ash: "#1a1a1d", black_oak: "#161617", gloss_black: "#101113", gloss_white: "#e7e9ed" };
 const BLUETOOTH = [
   ["tap", "Show, and tap to connect or disconnect"],
   ["status", "Show only when not connected"],
@@ -916,6 +933,18 @@ function tileConfig(config) {
   const tile = { ...config, type: "tile", show_entity_picture: true };
   for (const key of OWN_KEYS) delete tile[key];
   return tile;
+}
+
+/** Elements matching selector in el's shadow root, a few shadow roots deep. */
+function findDeep(root, selector, depth = 5) {
+  if (!root || depth < 0) return null;
+  const found = root.querySelector?.(selector);
+  if (found) return found;
+  for (const el of root.querySelectorAll?.("*") ?? []) {
+    const hit = el.shadowRoot && findDeep(el.shadowRoot, selector, depth - 1);
+    if (hit) return hit;
+  }
+  return null;
 }
 
 const reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -962,11 +991,24 @@ class SvsCard extends HTMLElement {
           --ha-card-backdrop-filter: none;
         }
         .through canvas, .through::after { display: none; }
+        /* Features style: a flat patch of the finish's base color, or a channel
+           pressed into the panel, behind each feature control */
+        #areas { position: absolute; inset: 0; pointer-events: none; }
+        .area { position: absolute; box-sizing: border-box; }
+        .area.flat { background: var(--flat); box-shadow: 0 0 3px 1px var(--flat); }
+        .area.inset {
+          background: linear-gradient(180deg, rgba(0, 0, 0, .22), rgba(0, 0, 0, .08));
+          box-shadow:
+            inset 0 2px 3px rgba(0, 0, 0, .55), inset 0 1px 1px rgba(0, 0, 0, .4),
+            inset 0 -1px 0 rgba(255, 255, 255, .14), 0 1px 0 rgba(255, 255, 255, .18);
+        }
+        /* No backing: a soft shadow keeps the symbol readable on any finish */
         .badge {
-          position: absolute; z-index: 3; width: 18px; height: 18px; padding: 0; border: 0; display: none; place-items: center;
+          position: absolute; z-index: 3; width: 18px; height: 18px; margin: -9px 0 0 -9px; padding: 0; border: 0;
+          display: none; place-items: center; background: none;
           border-radius: var(--ha-border-radius-pill, 9999px);
-          background: var(--ha-card-background, var(--card-background-color, #fff));
           color: var(--secondary-text-color); pointer-events: none; cursor: default;
+          filter: drop-shadow(0 0 1px rgba(0, 0, 0, .9)) drop-shadow(0 0 2px rgba(0, 0, 0, .6));
         }
         .badge.on { display: grid; }
         .badge.connected { color: var(--blue-color, #2196f3); }
@@ -974,10 +1016,11 @@ class SvsCard extends HTMLElement {
         /* A larger area to tap than the badge itself */
         .badge.tappable::before { content: ""; position: absolute; inset: -8px; }
         .badge:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
-        .badge svg { width: 13px; height: 13px; }
+        .badge svg { width: 16px; height: 16px; }
       </style>
       <div class="frame">
         <canvas></canvas>
+        <div id="areas"></div>
         <button type="button" class="badge"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="${BT_OFF}"/></svg></button>
       </div>`;
     this._frame = this.shadowRoot.querySelector(".frame");
@@ -985,6 +1028,7 @@ class SvsCard extends HTMLElement {
     this._badge = this.shadowRoot.querySelector(".badge");
     keepTaps(this._badge);
     this._badge.addEventListener("click", () => this._toggleConnection());
+    this._areas = this.shadowRoot.getElementById("areas");
     this._resize = new ResizeObserver(() => this._layout());
     this._resize.observe(this._frame);
     // The volume feature reports while its slider moves
@@ -1254,10 +1298,14 @@ class SvsCard extends HTMLElement {
   _placeBadge() {
     const icon = this._tile?.shadowRoot?.querySelector("ha-tile-icon");
     if (!icon) return;
+    // Centered on the driver's edge, up and to the right, so about half of
+    // the badge sits over the driver
     const frame = this._frame.getBoundingClientRect(), box = icon.getBoundingClientRect();
     const scale = frame.width / this._frame.offsetWidth || 1;
-    this._badge.style.left = `${(box.right - frame.left) / scale - 14}px`;
-    this._badge.style.top = `${(box.top - frame.top) / scale - 4}px`;
+    const r = box.width / 2 / scale;
+    const cx = (box.left - frame.left) / scale + r, cy = (box.top - frame.top) / scale + r;
+    this._badge.style.left = `${cx + r * .7071}px`;
+    this._badge.style.top = `${cy - r * .7071}px`;
   }
 
   connectedCallback() {
@@ -1282,6 +1330,7 @@ class SvsCard extends HTMLElement {
     }
     if (this._badge.classList.contains("on")) this._placeBadge();
     this._paintExpander(onExpander);
+    this._drawAreas();
     if (!tone || onExpander) return;
     const w = this._frame.clientWidth, h = this._frame.clientHeight;
     if (!w || !h) return;
@@ -1292,6 +1341,100 @@ class SvsCard extends HTMLElement {
     this._canvas.width = w;
     this._canvas.height = h;
     drawFinish(this._canvas.getContext("2d"), finish, pattern, w, h);
+  }
+
+  /**
+   * The areas the feature controls take, in the card's own pixels: each
+   * control, except that each preset button counts on its own (so the finish
+   * shows between them). Read from the tile card's rendered layout; if it
+   * ever changes, the areas are simply not drawn.
+   */
+  _featureAreas() {
+    const root = this._tile?.shadowRoot;
+    if (!root) return [];
+    const origin = this._frame.getBoundingClientRect();
+    const scale = origin.width / this._frame.offsetWidth || 1;
+    const box = (el) => {
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) return null;
+      const radius = parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0;
+      return { x: (r.left - origin.left) / scale, y: (r.top - origin.top) / scale, w: r.width / scale, h: r.height / scale, radius };
+    };
+    const areas = [];
+    this._watchedGroups ??= new WeakSet();
+    for (const group of root.querySelectorAll("hui-card-features")) {
+      if (!this._watchedGroups.has(group)) {
+        this._watchedGroups.add(group);
+        this._resize.observe(group);
+        this._watchAdded(group.shadowRoot);
+      }
+      for (const wrap of group.shadowRoot?.querySelectorAll("hui-card-feature") ?? []) {
+        const inner = wrap.shadowRoot ?? wrap;
+        const presets = findDeep(inner, "svs-subwoofer-presets");
+        const buttons = presets ? [...(presets.shadowRoot?.querySelectorAll("button") ?? [])] : [];
+        const own = findDeep(inner, "svs-subwoofer-volume, svs-subwoofer-standby");
+        const control = own?.shadowRoot?.querySelector(".control");
+        const element = [...inner.children].find((c) => c.tagName !== "STYLE");
+        for (const el of buttons.length ? buttons : [control ?? element]) {
+          const b = el && box(el);
+          if (b) areas.push(b);
+        }
+      }
+    }
+    this._watchAdded(root);
+    return areas;
+  }
+
+  // Redraw when elements are added in the tile card (features render late)
+  _watchAdded(root) {
+    if (!root) return;
+    this._observed ??= new WeakSet();
+    if (this._observed.has(root)) return;
+    this._observed.add(root);
+    this._mutations ??= new MutationObserver(() => {
+      clearTimeout(this._areasTimer);
+      this._areasTimer = setTimeout(() => this._drawAreas(), 0);
+    });
+    this._mutations.observe(root, { childList: true, subtree: true });
+  }
+
+  _drawAreas() {
+    const style = finishTone(this._config?.finish) ? this._config.features_style ?? "match" : "match";
+    if (style === "match") {
+      this._areas.replaceChildren();
+      this._areasKey = undefined;
+      return;
+    }
+    const pad = style === "inset" ? 3 : 2;
+    const areas = this._featureAreas().map((b) => ({
+      x: b.x - pad, y: b.y - pad, w: b.w + 2 * pad, h: b.h + 2 * pad,
+      radius: Math.min(b.radius + pad, (b.h + 2 * pad) / 2),
+    }));
+    const key = style + JSON.stringify(areas.map((a) => [a.x, a.y, a.w, a.h, a.radius].map(Math.round)));
+    if (key !== this._areasKey) {
+      this._areasKey = key;
+      this._areas.style.setProperty("--flat", FLAT[this._config.finish] ?? "transparent");
+      this._areas.replaceChildren(...areas.map((a) => {
+        const el = document.createElement("div");
+        el.className = `area ${style}`;
+        Object.assign(el.style, { left: `${a.x}px`, top: `${a.y}px`, width: `${a.w}px`, height: `${a.h}px`, borderRadius: `${a.radius}px` });
+        return el;
+      }));
+    }
+    // The tile card can move its features without changing size (fonts
+    // loading, the editor preview opening): check again for about a second
+    if (this._settling) return;
+    this._settleUntil = performance.now() + 1200;
+    this._settling = true;
+    const check = () => {
+      if (performance.now() > this._settleUntil || !this.isConnected) {
+        this._settling = false;
+        return;
+      }
+      this._drawAreas();
+      setTimeout(check, 100);
+    };
+    setTimeout(check, 100);
   }
 
   /**
@@ -1434,7 +1577,7 @@ class SvsCardEditor extends HTMLElement {
       ev.stopPropagation();
       const v = ev.detail.value;
       this._update({
-        finish: v.finish ?? "none", finish_extent: v.finish_extent ?? "card",
+        finish: v.finish ?? "none", finish_extent: v.finish_extent ?? "card", features_style: v.features_style ?? "match",
         vibration: v.vibration !== false, bluetooth: v.bluetooth ?? "tap",
       });
     });
@@ -1497,6 +1640,10 @@ class SvsCardEditor extends HTMLElement {
         name: "finish_extent", label: "Finish extent",
         helper: "Container: in an expander card, choose it on the header card and on each card inside. The header draws the finish across the whole expander card, and the cards inside let it show through.",
         selector: { select: { mode: "dropdown", options: FINISH_EXTENTS.map(([value, label]) => ({ value, label })) } },
+      }, {
+        name: "features_style", label: "Features style",
+        helper: "Match style: the controls sit on the finish. Flat: on a patch of the finish's base color, without grain or reflections. Inset: in a channel pressed into the panel.",
+        selector: { select: { mode: "dropdown", options: FEATURES_STYLES.map(([value, label]) => ({ value, label })) } },
       }]),
       {
         name: "bluetooth", label: "Bluetooth badge",
@@ -1509,7 +1656,7 @@ class SvsCardEditor extends HTMLElement {
         selector: { boolean: {} },
       },
     ];
-    this._form.data = { finish: c.finish, finish_extent: c.finish_extent ?? "card", vibration: c.vibration !== false, bluetooth: c.bluetooth ?? "tap" };
+    this._form.data = { finish: c.finish, finish_extent: c.finish_extent ?? "card", features_style: c.features_style ?? "match", vibration: c.vibration !== false, bluetooth: c.bluetooth ?? "tap" };
     const label = RANDOMIZE_LABEL[c.finish];
     this.shadowRoot.getElementById("row").style.display = label ? "" : "none";
     this.shadowRoot.getElementById("randomize").textContent = label ?? "";
@@ -1538,9 +1685,11 @@ function explicit(config) {
   if (c.finish === "none") {
     delete c.pattern;
     delete c.finish_extent;
+    delete c.features_style;
   } else {
     c.pattern = Number.isFinite(c.pattern) ? c.pattern : DEFAULT_PATTERN;
     c.finish_extent = FINISH_EXTENTS.some(([id]) => id === c.finish_extent) ? c.finish_extent : "card";
+    c.features_style = FEATURES_STYLES.some(([id]) => id === c.features_style) ? c.features_style : "match";
   }
   return c;
 }
