@@ -1983,6 +1983,7 @@ class SvsPanelCard extends HTMLElement {
         bluetooth: this._config.bluetooth ?? "show",
         vibration: this._config.vibration !== false,
         standby_badge: !!this._config.standby_badge,
+        driver_ring: this._config.driver_ring !== false,
         ...own,
         type: "custom:svs-subwoofer-card",
         name: member.name || defaults[member.entity],
@@ -2219,7 +2220,7 @@ class SvsCardEditor extends HTMLElement {
         selector: { select: { mode: "dropdown", options: BLUETOOTH.map(([value, label]) => ({ value, label })) } },
       },
       {
-        name: "driver_ring", label: "Ring around the driver",
+        name: "driver_ring", label: "Driver ring",
         helper: "In the active preset's color, or the volume threshold's color.",
         selector: { boolean: {} },
       },
