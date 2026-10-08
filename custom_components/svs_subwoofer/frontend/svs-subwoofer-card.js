@@ -1026,8 +1026,8 @@ const FEATURES_STYLES = [["match", "Match style"], ["flat", "Flat"], ["inset", "
 // The finish's base color, without grain or reflections, for Flat
 const FLAT = { black_ash: "#1a1a1d", black_oak: "#161617", gloss_black: "#101113", gloss_white: "#e7e9ed", fabric: "#1f1f21", grille: "#1d1e20" };
 const BLUETOOTH = [
-  ["tap", "Show, and tap to connect or disconnect"],
-  ["status", "Show only when not connected"],
+  ["show", "Show"],
+  ["disconnected", "Show only when not connected"],
   ["off", "Hide"],
 ];
 const FINISH_EXTENTS = [
@@ -1169,10 +1169,6 @@ class SvsCard extends HTMLElement {
         .badge.on { display: grid; }
         .badge.connected { color: var(--blue-color, #2196f3); }
         .badge.some { color: var(--warning-color, #ffa600); }
-        .badge.tappable { pointer-events: auto; cursor: pointer; }
-        /* A larger area to tap than the badge itself */
-        .badge.tappable::before { content: ""; position: absolute; inset: -8px; }
-        .badge:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
         .badge svg { width: 16px; height: 16px; }
         .standby-badge {
           position: absolute; z-index: 3; width: 14px; height: 14px; margin: -7px 0 0 -7px; display: none;
@@ -1186,14 +1182,12 @@ class SvsCard extends HTMLElement {
         <canvas></canvas>
         <div id="areas"></div>
         <span class="standby-badge" aria-hidden="true"></span>
-        <button type="button" class="badge"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="${BT_OFF}"/></svg></button>
+        <span class="badge" role="img"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="${BT_OFF}"/></svg></span>
       </div>`;
     this._frame = this.shadowRoot.querySelector(".frame");
     this._canvas = this.shadowRoot.querySelector("canvas");
     this._badge = this.shadowRoot.querySelector(".badge");
     this._standbyBadge = this.shadowRoot.querySelector(".standby-badge");
-    keepTaps(this._badge);
-    this._badge.addEventListener("click", () => this._toggleConnection());
     this._areas = this.shadowRoot.getElementById("areas");
     this._resize = new ResizeObserver(() => this._layout());
     this._resize.observe(this._frame);
@@ -1449,26 +1443,23 @@ class SvsCard extends HTMLElement {
   }
 
   _updateBadge() {
-    const mode = this._config?.bluetooth ?? "tap";
+    const mode = this._config?.bluetooth ?? "show";
     const sensors = this._connectionSensors;
     const on = sensors.filter((id) => this._hass?.states[id]?.state === "on").length;
     const connected = sensors.length > 0 && on === sensors.length;
     const some = on > 0 && !connected;
-    const show = sensors.length > 0 && (mode === "tap" || (mode === "status" && !connected));
+    const show = sensors.length > 0 && (mode === "show" || (mode === "disconnected" && !connected));
     this._badge.classList.toggle("on", show);
     this._badge.classList.toggle("connected", connected);
     this._badge.classList.toggle("some", some);
-    this._badge.classList.toggle("tappable", mode === "tap");
     this._badge.querySelector("path").setAttribute("d", connected || some ? BT_ON : BT_OFF);
     const group = sensors.length > 1;
     const status = connected
       ? (group ? "All connected" : "Connected")
       : some ? `${on} of ${sensors.length} connected` : (group ? "None connected" : "Not connected");
-    const label = mode !== "tap" ? status
-      : connected ? `${status}. Select to disconnect` : `${status}. Select to connect`;
+    const label = status;
     this._badge.title = label;
     this._badge.setAttribute("aria-label", label);
-    this._badge.tabIndex = mode === "tap" ? 0 : -1;
     // The standby mode's first letter: A (Auto On), O (On), T (Trigger)
     const standby = this._entities.standby;
     const value = standby ? this._hass?.states[standby]?.state : undefined;
@@ -1480,16 +1471,7 @@ class SvsCard extends HTMLElement {
     if (show || letter) this._placeBadge();
   }
 
-  // Connect what is not connected; when everything is, disconnect it all
-  _toggleConnection() {
-    if ((this._config?.bluetooth ?? "tap") !== "tap" || !this._hass) return;
-    const sensors = this._connectionSensors;
-    const off = sensors.filter((id) => this._hass.states[id]?.state !== "on");
-    const targets = off.length ? off : sensors;
-    const role = off.length ? "reconnect" : "disconnect";
-    const buttons = targets.map((id) => sibling(this._hass, id, role)).filter(Boolean);
-    if (buttons.length) this._hass.callService("button", "press", { entity_id: buttons });
-  }
+
 
   /**
    * The badges sit on the driver's own edge (the driver grows and shrinks
@@ -1888,7 +1870,7 @@ class SvsPanelCard extends HTMLElement {
       const own = { ...member };
       delete own.type;
       card.setConfig({
-        bluetooth: this._config.bluetooth ?? "tap",
+        bluetooth: this._config.bluetooth ?? "show",
         vibration: this._config.vibration !== false,
         standby_badge: !!this._config.standby_badge,
         ...own,
@@ -2037,7 +2019,7 @@ class SvsCardEditor extends HTMLElement {
       const v = ev.detail.value;
       this._update({
         finish: v.finish ?? "none", finish_extent: v.finish_extent ?? "card", features_style: v.features_style ?? "match",
-        vibration: v.vibration !== false, bluetooth: v.bluetooth ?? "tap", standby_badge: !!v.standby_badge,
+        vibration: v.vibration !== false, bluetooth: v.bluetooth ?? "show", standby_badge: !!v.standby_badge,
       });
     });
     this.shadowRoot.getElementById("randomize").addEventListener("click", () => {
@@ -2106,7 +2088,7 @@ class SvsCardEditor extends HTMLElement {
       }]),
       {
         name: "bluetooth", label: "Bluetooth badge",
-        helper: "On a subwoofer's card. A subwoofer group has no connection of its own, so its card has no badge.",
+        helper: "To connect and disconnect with a tap, set Icon tap behavior (under Interactions) to toggle the subwoofer's Connection switch. On a group in the panel, the badge shows its subwoofers together.",
         selector: { select: { mode: "dropdown", options: BLUETOOTH.map(([value, label]) => ({ value, label })) } },
       },
       {
@@ -2120,7 +2102,7 @@ class SvsCardEditor extends HTMLElement {
         selector: { boolean: {} },
       },
     ];
-    this._form.data = { finish: c.finish, finish_extent: c.finish_extent ?? "card", features_style: c.features_style ?? "match", vibration: c.vibration !== false, bluetooth: c.bluetooth ?? "tap", standby_badge: !!c.standby_badge };
+    this._form.data = { finish: c.finish, finish_extent: c.finish_extent ?? "card", features_style: c.features_style ?? "match", vibration: c.vibration !== false, bluetooth: c.bluetooth ?? "show", standby_badge: !!c.standby_badge };
     const label = RANDOMIZE_LABEL[c.finish];
     this.shadowRoot.getElementById("row").style.display = label ? "" : "none";
     this.shadowRoot.getElementById("randomize").textContent = label ?? "";
@@ -2400,7 +2382,7 @@ function explicit(config) {
   const c = { ...config };
   c.finish = FINISHES.some(([id]) => id === c.finish) ? c.finish : "none";
   c.vibration = c.vibration !== false;
-  c.bluetooth = BLUETOOTH.some(([id]) => id === c.bluetooth) ? c.bluetooth : "tap";
+  c.bluetooth = BLUETOOTH.some(([id]) => id === c.bluetooth) ? c.bluetooth : "show";
   c.standby_badge = !!c.standby_badge;
   if (c.finish === "none") {
     delete c.pattern;
