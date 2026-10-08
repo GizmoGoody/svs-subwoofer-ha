@@ -428,6 +428,9 @@
   function under(el) {
     const page = rgba(getComputedStyle(document.body).backgroundColor);
     for (const n of ancestors(el).slice(1)) {
+      // The card's and the panel's own boxes are below their finish: they
+      // are handled with the card (its canvas, or its background)
+      if (n.matches(".frame, .panel") && n.getRootNode().host?.localName.startsWith("svs-subwoofer-")) continue;
       if (n.localName === "svs-subwoofer-card" || n.localName === "svs-subwoofer-panel-card") {
         const box = n.shadowRoot.querySelector(".frame, .panel");
         if (box.classList.contains("finished") && !box.classList.contains("through")) {
