@@ -2260,6 +2260,8 @@ class SvsPanelCardEditor extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this.shadowRoot.innerHTML = `
       <style>
+        h3 { margin: 32px 0 4px; font-size: var(--ha-font-size-l, 16px); font-weight: 500; }
+        .hint { margin: 0 0 8px; color: var(--secondary-text-color); font-size: var(--ha-font-size-s, 12px); }
         .toolbar { display: flex; align-items: center; gap: 4px; border-bottom: 1px solid var(--divider-color); margin-bottom: 16px; }
         .tabs { display: flex; flex: 1; gap: 4px; overflow-x: auto; }
         .tab {
@@ -2268,21 +2270,26 @@ class SvsPanelCardEditor extends HTMLElement {
         }
         .tab[aria-selected="true"] { color: var(--primary-color); border-bottom-color: var(--primary-color); }
         .tab:focus-visible { outline: 2px solid var(--primary-color); outline-offset: -2px; }
-        .row-options { display: flex; justify-content: flex-end; gap: 4px; margin-bottom: 8px; }
+        .row-options { display: flex; align-items: center; justify-content: space-between; gap: 4px; margin-bottom: 8px; }
+        .row-options .buttons { display: flex; gap: 4px; }
         ha-form { display: block; margin-top: 24px; }
       </style>
+      <div id="card"></div>
+      <h3>Subwoofers in the panel</h3>
+      <p class="hint">One row per subwoofer, below the card. Select a number to edit that subwoofer's row; the plus button adds a subwoofer.</p>
       <div class="toolbar">
-        <div class="tabs" role="tablist"></div>
+        <div class="tabs" role="tablist" aria-label="Subwoofers in the panel"></div>
         <ha-icon-button id="add"></ha-icon-button>
       </div>
       <div id="body"></div>`;
+    this._cardSlot = this.shadowRoot.getElementById("card");
     this._tabs = this.shadowRoot.querySelector(".tabs");
     this._body = this.shadowRoot.getElementById("body");
     const add = this.shadowRoot.getElementById("add");
     add.path = MDI.plus;
     add.label = "Add a subwoofer";
     add.addEventListener("click", () => this._select("add"));
-    this._selected = "card";
+    this._selected = 0;
   }
 
   set hass(hass) {
@@ -2313,36 +2320,43 @@ class SvsPanelCardEditor extends HTMLElement {
 
   _renderTabs() {
     // Numbered, like the vertical stack card's tabs
-    const tabs = [["card", "Card"], ...this._members.map((m, i) => [i, String(i + 1)])];
-    this._tabs.replaceChildren(...tabs.map(([key, label]) => {
+    this._tabs.replaceChildren(...this._members.map((m, i) => {
       const tab = document.createElement("button");
       tab.type = "button";
       tab.className = "tab";
       tab.setAttribute("role", "tab");
-      tab.setAttribute("aria-selected", String(this._selected === key));
-      tab.textContent = label;
-      tab.addEventListener("click", () => this._select(key));
+      tab.setAttribute("aria-selected", String(this._selected === i));
+      tab.textContent = String(i + 1);
+      tab.title = m.name || defaultMemberNames(this._hass, [m.entity])[m.entity] || m.entity;
+      tab.addEventListener("click", () => this._select(i));
       return tab;
     }));
   }
 
   _select(key) {
     this._selected = key;
-    this._show();
+    this._showBody();
   }
 
   _show() {
     if (!this._config || !this._hass) return;
     this._built = true;
-    if (typeof this._selected === "number" && !this._members[this._selected]) this._selected = "card";
+    this._showCard();
+    this._showBody();
+  }
+
+  _showBody() {
+    if (typeof this._selected === "number" && !this._members[this._selected]) {
+      this._selected = this._members.length ? 0 : "add";
+    }
     this._renderTabs();
     this._memberEditor = undefined;
-    if (this._selected === "card") this._showCard();
-    else if (this._selected === "add") this._showAdd();
+    if (this._selected === "add") this._showAdd();
     else this._showMember(this._selected);
   }
 
-  // The card itself: the SVS Subwoofer card's editor, and how the rows open
+  // The card itself, above the tabs: the SVS Subwoofer card's editor, and how
+  // the rows open
   _showCard() {
     if (!this._cardEditor) {
       this._cardEditor = document.createElement(EDITOR_TYPE);
@@ -2361,13 +2375,19 @@ class SvsPanelCardEditor extends HTMLElement {
         ev.stopPropagation();
         const v = ev.detail.value;
         this._fire({ ...this._config, members_toggle: v.members_toggle !== false, members_open: v.members_open !== false });
+        this._renderRowsForm();
       });
+      this._cardSlot.replaceChildren(this._cardEditor, this._rowsForm);
     }
     const card = { ...this._config };
     for (const key of PANEL_KEYS) delete card[key];
     this._cardEditor.hass = this._hass;
     if (this._lovelace) this._cardEditor.lovelace = this._lovelace;
     this._cardEditor.setConfig(card);
+    this._renderRowsForm();
+  }
+
+  _renderRowsForm() {
     this._rowsForm.hass = this._hass;
     this._rowsForm.schema = [
       {
@@ -2380,7 +2400,6 @@ class SvsPanelCardEditor extends HTMLElement {
       ]),
     ];
     this._rowsForm.data = { members_toggle: this._config.members_toggle !== false, members_open: this._config.members_open !== false };
-    this._body.replaceChildren(this._cardEditor, this._rowsForm);
   }
 
   // Adding a subwoofer: the subwoofers not yet in the panel, by name
@@ -2395,23 +2414,26 @@ class SvsPanelCardEditor extends HTMLElement {
         const members = [...this._members, newMember(entity)];
         this._selected = members.length - 1;
         this._fire({ ...this._config, members });
-        this._show();
+        this._showBody();
       });
     }
     const taken = new Set(this._members.map((m) => m.entity));
     const options = sortPairs(subwoofers(this._hass)).filter(([id]) => !taken.has(id)).map(([value, label]) => ({ value, label }));
     this._addForm.hass = this._hass;
-    this._addForm.schema = [{ name: "entity", label: "Subwoofer", selector: { select: { mode: "dropdown", options } } }];
+    this._addForm.schema = [{ name: "entity", label: "Subwoofer to add", selector: { select: { mode: "dropdown", options } } }];
     this._addForm.data = {};
     this._body.replaceChildren(this._addForm);
   }
 
-  // A subwoofer's row: edited like a tile card, with move and remove buttons
+  // A subwoofer's row: edited like a tile card, with buttons to copy the
+  // card's volume settings, duplicate, move or remove it
   async _showMember(index) {
     const member = this._members[index];
     this._member = member;
     const options = document.createElement("div");
     options.className = "row-options";
+    const buttons = document.createElement("div");
+    buttons.className = "buttons";
     const button = (path, label, disabled, onClick) => {
       const b = document.createElement("ha-icon-button");
       b.path = path;
@@ -2420,43 +2442,62 @@ class SvsPanelCardEditor extends HTMLElement {
       b.addEventListener("click", onClick);
       return b;
     };
+    const update = (members, selected) => {
+      this._selected = selected;
+      this._fire({ ...this._config, members });
+      this._showBody();
+    };
     const move = (step) => {
       const members = [...this._members];
       const [item] = members.splice(index, 1);
       members.splice(index + step, 0, item);
-      this._selected = index + step;
-      this._fire({ ...this._config, members });
-      this._show();
+      update(members, index + step);
     };
-    // Duplicate: the same settings for the next subwoofer not yet in the
+    // Duplicate: the row as it is now, for the next subwoofer not yet in the
     // panel (by name), so only the entity needs changing, if anything
     const duplicate = () => {
       const taken = new Set(this._members.map((m) => m.entity));
       const next = sortPairs(subwoofers(this._hass)).map(([id]) => id).find((id) => !taken.has(id));
-      // The row as it is now, with any edits made on its tab
       const copy = JSON.parse(JSON.stringify(this._members[index]));
       delete copy.name;
       if (next) copy.entity = next;
       const members = [...this._members];
       members.splice(index + 1, 0, copy);
-      this._selected = index + 1;
-      this._fire({ ...this._config, members });
-      this._show();
+      update(members, index + 1);
     };
-    options.append(
+    // The card's volume feature settings (range and thresholds), copied to
+    // this row's volume feature (added if the row has none)
+    const cardVolume = (this._config.features ?? []).find((f) => f.type === "custom:svs-subwoofer-volume");
+    const copyVolume = document.createElement("ha-button");
+    copyVolume.textContent = "Copy the card's volume settings";
+    copyVolume.disabled = !cardVolume;
+    copyVolume.title = cardVolume ? "Use the card's volume range and thresholds on this row" : "The card has no SVS Subwoofer volume feature";
+    copyVolume.addEventListener("click", () => {
+      const row = JSON.parse(JSON.stringify(this._members[index]));
+      const features = row.features ?? [];
+      const at = features.findIndex((f) => f.type === "custom:svs-subwoofer-volume");
+      if (at >= 0) features[at] = JSON.parse(JSON.stringify(cardVolume));
+      else features.push(JSON.parse(JSON.stringify(cardVolume)));
+      row.features = features;
+      const members = [...this._members];
+      members[index] = row;
+      update(members, index);
+    });
+    buttons.append(
       button(MDI.copy, "Duplicate", false, duplicate),
       button(MDI.left, "Move before", index === 0, () => move(-1)),
       button(MDI.right, "Move after", index === this._members.length - 1, () => move(1)),
       button(MDI.delete, "Remove this subwoofer", false, () => {
         const members = this._members.filter((_, i) => i !== index);
-        this._selected = "card";
-        this._fire({ ...this._config, members });
-        this._show();
+        update(members, Math.max(0, index - 1));
       }),
     );
+    options.append(copyVolume, buttons);
     this._body.replaceChildren(options);
     const editor = await createTileEditor(member.entity);
     if (this._selected !== index) return;  // another tab was chosen meanwhile
+    // Only single subwoofers' volumes in the entity picker
+    editor.svsEntities = svsVolumes(this._hass, false);
     editor.addEventListener("config-changed", (ev) => {
       ev.stopPropagation();
       const next = { ...ev.detail.config };
