@@ -86,6 +86,11 @@ function applyTextOn(el, rerender) {
 const cssColor = (color) => (HA_COLORS.includes(color) ? `var(--${color}-color)` : color);
 const isLight = (color) => LIGHT_COLORS.includes(color) || /^#(f|e)/i.test(color || "");
 
+// "Default" is the subwoofer's factory settings (SVS's fourth preset slot):
+// not shown unless chosen
+const FACTORY_PRESET = "Default";
+const defaultShown = (names) => names.filter((n) => n !== FACTORY_PRESET);
+
 // Defaults for the usual preset names; anything else uses the theme's feature color
 function presetDefaults(name) {
   const n = name.toLowerCase();
@@ -257,7 +262,7 @@ class SvsPresetButtons extends HTMLElement {
     // The subwoofer's own preset order (its slots) until the user reorders them
     const names = (stateObj?.attributes.options ?? []).filter((n) => !NOT_PRESETS.includes(n));
     const show = Array.isArray(this._config.presets_shown) ? this._config.presets_shown : null;
-    const shown = show ? show.filter((n) => names.includes(n)) : names;
+    const shown = show ? show.filter((n) => names.includes(n)) : defaultShown(names);
     const cycle = this._config.style === "presets_cycle";
     const on = applyTextOn(this, () => {
       this._key = undefined;
@@ -364,13 +369,13 @@ class SvsPresetButtonsEditor extends HTMLElement {
         ev.stopPropagation();
         const value = ev.detail.value;
         const presets = {};
-        for (const name of this._names()) {
+        for (const name of value.presets_shown ?? defaultShown(this._names())) {
           const color = value[`color_${name}`], icon = value[`icon_${name}`];
           if (color || icon) presets[name] = { ...(color ? { color } : {}), ...(icon ? { icon } : {}) };
         }
         const config = { type: this._config.type, style: value.style === "presets_cycle" ? "presets_cycle" : "presets_buttons", presets };
         // Kept only when it differs from the default (every preset, in slot order)
-        if (Array.isArray(value.presets_shown) && JSON.stringify(value.presets_shown) !== JSON.stringify(this._names())) {
+        if (Array.isArray(value.presets_shown) && JSON.stringify(value.presets_shown) !== JSON.stringify(defaultShown(this._names()))) {
           config.presets_shown = value.presets_shown;
         }
         this._config = config;
@@ -379,10 +384,12 @@ class SvsPresetButtonsEditor extends HTMLElement {
       this.append(this._form);
     }
     const names = this._names();
+    const shownNames = (this._config.presets_shown ?? defaultShown(names)).filter((n) => names.includes(n));
     this._form.hass = this._hass;
     this._form.schema = [
       {
         name: "presets_shown", label: "Presets",
+        helper: "Default is the subwoofer's factory settings (SVS's fourth preset); it is shown only if you add it.",
         selector: { select: { multiple: true, reorder: true, mode: "dropdown", options: names } },
       },
       {
@@ -392,15 +399,15 @@ class SvsPresetButtonsEditor extends HTMLElement {
           { value: "presets_cycle", label: "Cycle button" },
         ] } },
       },
-      ...names.map((name) => ({
+      ...shownNames.map((name) => ({
         type: "grid", name: "", schema: [
           { name: `color_${name}`, label: `${name} color`, selector: { ui_color: {} } },
           { name: `icon_${name}`, label: `${name} icon`, selector: { icon: {} } },
         ],
       })),
     ];
-    const data = { style: this._config.style === "presets_cycle" ? "presets_cycle" : "presets_buttons", presets_shown: this._config.presets_shown ?? names };
-    for (const name of names) {
+    const data = { style: this._config.style === "presets_cycle" ? "presets_cycle" : "presets_buttons", presets_shown: shownNames };
+    for (const name of shownNames) {
       const look = { ...presetDefaults(name), ...(this._config.presets?.[name] ?? {}) };
       data[`color_${name}`] = look.color;
       data[`icon_${name}`] = look.icon;
