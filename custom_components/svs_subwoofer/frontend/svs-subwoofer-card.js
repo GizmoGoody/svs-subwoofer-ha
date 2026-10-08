@@ -1195,7 +1195,12 @@ class SvsCard extends HTMLElement {
           filter: drop-shadow(0 0 1px rgba(0, 0, 0, .9)) drop-shadow(0 0 2px rgba(0, 0, 0, .6));
         }
         .standby-badge.on { display: grid; }
-        /* On a light finish, the badges get a light halo instead */
+        /* Without a finish, the badges get a halo in the card's own color */
+        .frame:not(.finished) .badge, .frame:not(.finished) .standby-badge {
+          filter: drop-shadow(0 0 1px var(--ha-card-background, var(--card-background-color, #fff)))
+            drop-shadow(0 0 2px var(--ha-card-background, var(--card-background-color, #fff)));
+        }
+        /* On a light finish, the badges get a light halo */
         .light-finish .badge, .light-finish .standby-badge {
           filter: drop-shadow(0 0 1px rgba(255, 255, 255, .95)) drop-shadow(0 0 2px rgba(255, 255, 255, .7));
         }
