@@ -56,7 +56,8 @@ try {
     } else if (data.method === "Runtime.consoleAPICalled") {
       logs.push(`${data.params.type}: ${data.params.args.map((a) => a.value ?? a.description).join(" ")}`);
     } else if (data.method === "Runtime.exceptionThrown") {
-      logs.push(`exception: ${data.params.exceptionDetails.exception?.description ?? data.params.exceptionDetails.text}`);
+      const d = data.params.exceptionDetails;
+      logs.push(`exception: ${d.exception?.description ?? d.exception?.value ?? d.text} at ${d.url ?? ""}:${d.lineNumber}`);
     }
   };
   const send = (method, params = {}) => new Promise((resolve, reject) => {
@@ -83,10 +84,17 @@ try {
   await send("Page.addScriptToEvaluateOnNewDocument", {
     source: `localStorage.setItem("hassTokens", ${JSON.stringify(JSON.stringify(tokens))});`,
   });
-  await send("Page.navigate", { url: `${base}/lovelace/0` });
+  await send("Page.navigate", { url: `${base}/` });
+  // The card file, from the address the integration serves it at (current
+  // Home Assistant opens its Home dashboard, which loads no dashboard resources)
   const loaded = await evaluate(`(async () => {
+    let imported = false;
     for (let i = 0; i < 600; i++) {
       const hass = document.querySelector("home-assistant")?.hass;
+      if (hass?.connected && !imported) {
+        imported = true;
+        await import("/svs_subwoofer/svs-subwoofer-card.js");
+      }
       if (hass?.connected && customElements.get("svs-subwoofer-card")) return { ok: true };
       await new Promise((r) => setTimeout(r, 100));
     }
