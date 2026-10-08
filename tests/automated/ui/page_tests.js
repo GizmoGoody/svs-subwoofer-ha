@@ -72,9 +72,18 @@
 
   window.svsUiTests = async () => {
     const results = [];
+    // Page errors (an element that throws while drawing) are recorded with
+    // the test they happen in, and fail it
+    let errors = [];
+    const onError = (ev) => errors.push(String(ev.error?.stack ?? ev.error ?? ev.message ?? ev.reason?.stack ?? ev.reason));
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onError);
     async function test(name, fn) {
+      errors = [];
       try {
         await fn();
+        await sleep(200);
+        if (errors.length) throw new Error(`page errors:\n${errors.join("\n---\n")}`);
         results.push({ name, ok: true });
       } catch (err) {
         results.push({ name, ok: false, detail: String(err?.stack ?? err) });
