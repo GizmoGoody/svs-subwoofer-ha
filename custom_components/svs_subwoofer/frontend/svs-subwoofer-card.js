@@ -360,15 +360,15 @@ class SvsPresetButtonsEditor extends HTMLElement {
     this._form.hass = this._hass;
     this._form.schema = [
       {
+        name: "presets_shown", label: "Presets",
+        selector: { select: { multiple: true, reorder: true, mode: "dropdown", options: names } },
+      },
+      {
         name: "style", label: "Style",
         selector: { select: { mode: "dropdown", options: [
           { value: "presets_buttons", label: "Buttons" },
           { value: "presets_cycle", label: "Cycle button" },
         ] } },
-      },
-      {
-        name: "presets_shown", label: "Presets",
-        selector: { select: { multiple: true, reorder: true, mode: "dropdown", options: names } },
       },
       ...names.map((name) => ({
         type: "grid", name: "", schema: [
