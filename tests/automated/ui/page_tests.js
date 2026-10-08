@@ -172,20 +172,21 @@
       await until(() => tabs().length === 1, "the tabs");
       expectEqual(tabs().map((t) => t.textContent), ["1"], "tab labels");
       const heading = el.shadowRoot.querySelector("h3");
-      if (!heading?.textContent.includes("Subwoofers")) throw new Error(`no heading above the tabs (got "${heading?.textContent}")`);
-      // The card's editor stands above the heading, not on a tab
-      const cardAbove = el.shadowRoot.querySelector("#card svs-subwoofer-card-editor");
-      if (!cardAbove) throw new Error("the card's editor is not above the tabs");
-      if (!(cardAbove.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING)) throw new Error("the card's editor is not before the heading");
+      expectEqual(heading?.textContent, "Subwoofers in the collapsible section", "the heading above the tabs");
+      // The main subwoofer's editor is in a collapsed section above the heading, not on a tab
+      const section = el.shadowRoot.querySelector("ha-expansion-panel");
+      expectEqual(section?.getAttribute("header"), "Main subwoofer", "the main subwoofer's section");
+      if (section.expanded) throw new Error("the main subwoofer's section starts expanded");
+      const cardAbove = section.querySelector("svs-subwoofer-card-editor");
+      if (!cardAbove) throw new Error("the card's editor is not in the main subwoofer's section");
+      if (!(section.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING)) throw new Error("the main subwoofer's section is not before the heading");
 
-      // A subwoofer's tab (the first one is open): copy the card's volume settings
-      const copy = await until(() => [...el.shadowRoot.querySelectorAll("ha-button")].find((b) => b.textContent.includes("volume settings")), "the copy button");
-      copy.click();
-      await until(() => saved.length, "a save");
-      expectEqual(saved.at(-1).members[0].features, [{ type: "custom:svs-subwoofer-volume", min: -50, max: 0, volume_thresholds: thresholds }], "the copied volume feature");
+      // A subwoofer's tab (the first one is open): its volume settings can
+      // copy the main subwoofer's
+      const tile = await tileEditorIn(el);
+      expectEqual(tile.svsMainVolume?.(), { type: "custom:svs-subwoofer-volume", min: -50, max: 0, volume_thresholds: thresholds }, "the main subwoofer's volume offered to the row");
 
       // State content and features stay as edited
-      const tile = await tileEditorIn(el);
       setFormValue(mainForm(tile), { state_content: ["state", "preset"] });
       await until(() => same(tile._config?.state_content, ["state", "preset"]), "the row's form to show two state contents");
       expectEqual(saved.at(-1).members[0].state_content, ["state", "preset"], "saved row state content");
@@ -237,6 +238,49 @@
       await sleep(300);
       if (form.data.min !== undefined) throw new Error(`the field was refilled with ${form.data.min}`);
       if (!saved.length) throw new Error("nothing was saved");
+    });
+
+    await test("volume: a cancelled drag ends where it was, not at the left end", async () => {
+      const calls = [];
+      const feature = document.createElement("svs-subwoofer-volume");
+      feature.setConfig({ type: "custom:svs-subwoofer-volume", min: -30 });
+      feature.hass = { ...hass(), callService: (domain, service, data) => calls.push(data) };
+      feature.context = { entity_id: first };
+      stage().append(feature);
+      const control = await until(() => feature.shadowRoot.querySelector(".control"), "the slider");
+      // A drag at the right end (0 dB), then the browser cancels it (its
+      // cancel event reports position 0)
+      feature._dragging = 0;
+      control.dispatchEvent(new PointerEvent("pointercancel", { clientX: 0, bubbles: true }));
+      expectEqual(calls.map((c) => c.value), [0], "the value sent");
+    });
+
+    await test("volume editor: copies the main subwoofer's volume in a panel row only", async () => {
+      const main = { type: "custom:svs-subwoofer-volume", min: -40, volume_thresholds: [{ below: -20, color: "green" }, { color: "red" }] };
+      // Outside a panel row: no copy button
+      const alone = hosted("svs-subwoofer-volume-editor").el;
+      alone.setConfig({ type: "custom:svs-subwoofer-volume" });
+      const aloneCopy = await until(() => alone.querySelector("ha-button"), "the copy button");
+      if (!aloneCopy.hidden) throw new Error("the copy button shows outside a panel row");
+      // In a row (an ancestor offers the main subwoofer's volume)
+      const row = document.createElement("div");
+      row.svsMainVolume = () => main;
+      stage().append(row);
+      const el = document.createElement("svs-subwoofer-volume-editor");
+      el.hass = hass();
+      const saved = [];
+      el.addEventListener("config-changed", (ev) => {
+        saved.push(ev.detail.config);
+        el.setConfig(ev.detail.config);
+      });
+      row.append(el);
+      el.setConfig({ type: "custom:svs-subwoofer-volume", max: -5 });
+      const copy = await until(() => !el.querySelector("ha-button")?.hidden && el.querySelector("ha-button"), "the copy button");
+      expectEqual(copy.textContent, "Copy the main subwoofer's Volume", "the copy button's label");
+      copy.click();
+      await until(() => saved.length, "a save");
+      expectEqual(saved.at(-1), main, "the copied settings");
+      await until(() => el.querySelector("ha-form").data.min === -40, "the form to show the copied settings");
     });
 
     await test("presets editor: reordered presets keep their order", async () => {
