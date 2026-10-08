@@ -118,6 +118,9 @@ function sibling(hass, entityId, role) {
 const byLabel = (a, b) => a.localeCompare(b, undefined, { sensitivity: "base" });
 const sortPairs = (pairs) => [...pairs].sort((a, b) => byLabel(a[1], b[1]));
 
+// The card writes the Auto On standby mode as Auto (the integration's name is unchanged)
+const standbyLabel = (mode) => (/^auto on$/i.test(mode ?? "") ? "Auto" : mode);
+
 const isSvs = (hass, entityId) => hass?.entities?.[entityId]?.platform === DOMAIN;
 
 /**
@@ -133,7 +136,7 @@ function subwooferAttributes(hass, entityId) {
     const stateObj = id && id !== entityId ? hass.states[id] : undefined;
     if (!stateObj || unavailable(stateObj) || stateObj.state === "unknown") continue;
     const unit = stateObj.attributes.unit_of_measurement;
-    extra[attribute] = unit ? `${stateObj.state} ${unit}` : stateObj.state;
+    extra[attribute] = unit ? `${stateObj.state} ${unit}` : role === "standby" ? standbyLabel(stateObj.state) : stateObj.state;
   }
   return extra;
 }
@@ -812,7 +815,7 @@ class SvsStandby extends HTMLElement {
       const button = document.createElement("button");
       button.type = "button";
       const label = document.createElement("span");
-      label.textContent = option;
+      label.textContent = standbyLabel(option);
       button.append(label);
       button.setAttribute("aria-pressed", String(stateObj.state === option));
       button.addEventListener("click", (ev) => {
