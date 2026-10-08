@@ -157,7 +157,7 @@ Edit a dashboard, select **Add card**, and search for **SVS Subwoofer**. The car
   - **Flat**: each control sits on a patch of the finish's base color, without grain or reflections, and has a solid backing.
   - **Inset**: each control sits in a channel pressed into the panel, with a solid backing. The preset and standby buttons are keys that press in (the active one stays pressed), and Home Assistant's own toggles become a slide.
   - With Flat and Inset, the finish still shows between the preset buttons.
-- **Standby mode badge**: a letter on the driver, down and to the right, for the standby mode: A (Auto ON), O (ON), or T (Trigger).
+- **Standby mode badge**: a letter on the driver, down and to the right, for the standby mode: A (Auto On), O (On), or T (Trigger).
 - **Bluetooth badge** (a subwoofer's card): show the connection on the driver, and tap it to connect or disconnect (the default); show it only when the subwoofer is not connected; or hide it. A subwoofer group has no connection of its own, so its card has no badge.
 - **Shake when the volume or preset changes**: the driver shakes while the volume slider moves and briefly when a preset loads, harder at a higher volume. It stays still for anyone who has reduced motion turned on.
 

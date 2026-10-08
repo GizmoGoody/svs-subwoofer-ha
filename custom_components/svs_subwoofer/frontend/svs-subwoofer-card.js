@@ -1441,7 +1441,7 @@ class SvsCard extends HTMLElement {
     this._badge.title = label;
     this._badge.setAttribute("aria-label", label);
     this._badge.tabIndex = mode === "tap" ? 0 : -1;
-    // The standby mode's first letter: A (Auto ON), O (ON), T (Trigger)
+    // The standby mode's first letter: A (Auto On), O (On), T (Trigger)
     const standby = this._entities.standby;
     const value = standby ? this._hass?.states[standby]?.state : undefined;
     const letter = this._config?.standby_badge && value && !NOT_PRESETS.includes(value) && value !== "unavailable" && value !== "unknown"
@@ -2073,7 +2073,7 @@ class SvsCardEditor extends HTMLElement {
       },
       {
         name: "standby_badge", label: "Standby mode badge",
-        helper: "A letter on the driver for the standby mode: A (Auto ON), O (ON) or T (Trigger).",
+        helper: "A letter on the driver for the standby mode: A (Auto On), O (On) or T (Trigger).",
         selector: { boolean: {} },
       },
       {
