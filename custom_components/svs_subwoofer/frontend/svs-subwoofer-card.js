@@ -71,6 +71,10 @@ function sibling(hass, entityId, role) {
   return undefined;
 }
 
+// Lists the user reads are sorted by their label
+const byLabel = (a, b) => a.localeCompare(b, undefined, { sensitivity: "base" });
+const sortPairs = (pairs) => [...pairs].sort((a, b) => byLabel(a[1], b[1]));
+
 const isSvs = (hass, entityId) => hass?.entities?.[entityId]?.platform === DOMAIN;
 
 /**
@@ -341,7 +345,7 @@ class SvsPresetButtonsEditor extends HTMLElement {
       },
       {
         name: "presets_shown", label: "Presets shown, in order",
-        selector: { select: { multiple: true, reorder: true, mode: "dropdown", options: names } },
+        selector: { select: { multiple: true, reorder: true, mode: "dropdown", options: [...names].sort(byLabel) } },
       },
       ...names.map((name) => ({
         type: "grid", name: "", schema: [
@@ -751,7 +755,7 @@ class SvsStandby extends HTMLElement {
     if (!this._hass || !this._config || !this._context) return;
     const entity = sibling(this._hass, this._context.entity_id, "standby");
     const stateObj = entity ? this._hass.states[entity] : undefined;
-    const options = (stateObj?.attributes.options ?? []).filter((o) => !NOT_PRESETS.includes(o));
+    const options = (stateObj?.attributes.options ?? []).filter((o) => !NOT_PRESETS.includes(o)).sort(byLabel);
     const key = JSON.stringify([options, stateObj?.state, unavailable(stateObj)]);
     if (key === this._key) return;
     this._key = key;
@@ -774,7 +778,7 @@ class SvsStandby extends HTMLElement {
 // ---------------------------------------------------------------------------
 // Finishes, drawn on a canvas behind the card
 // ---------------------------------------------------------------------------
-const FINISHES = [
+const FINISHES = sortPairs([
   ["none", "None (theme)"],
   ["black_ash", "Premium Black Ash"],
   ["black_oak", "Black Oak Real Wood Veneer"],
@@ -782,7 +786,7 @@ const FINISHES = [
   ["gloss_white", "Piano Gloss White"],
   ["fabric", "Fabric"],
   ["grille", "Grille"],
-];
+]);
 const WOOD = ["black_ash", "black_oak"];
 const finishTone = (finish) => (finish === "gloss_white" ? "light" : finish === "none" ? null : "dark");
 // The solid backing behind each feature control on a finish
@@ -933,7 +937,7 @@ function drawFinish(ctx, finish, pattern, w, h) {
 }
 
 /**
- * Speaker fabric: a dark charcoal, fine knit (two crossing fine weaves and a
+ * Speaker fabric: a near-black fine knit (two crossing fine weaves and a
  * speckle), with a very subdued sheen whose angle and place come from the
  * pattern.
  */
@@ -947,7 +951,7 @@ function drawFabric(px, w, h, pattern) {
       const k2 = Math.sin((x - y) * 1.7 + noise(x * .3 + 50, y * .3, 1) * 3) * .5 + .5;
       const speck = noise(x * .7 + 20, y * .7, 2);
       const d = ((x - cx) * ca + (y - cy) * sa) / reach;
-      const t = 57 + (k1 * k2 - .25) * 12 + (speck - .5) * 22 + (noise(x * .02, y * .02, 2) - .5) * 6 + Math.max(0, 1 - d * d) * 5;
+      const t = 33 + (k1 * k2 - .25) * 10 + (speck - .5) * 17 + (noise(x * .02, y * .02, 2) - .5) * 5 + Math.max(0, 1 - d * d) * 4;
       const o = (y * w + x) * 4;
       px[o] = t; px[o + 1] = t; px[o + 2] = t + 2; px[o + 3] = 255;
     }
@@ -1014,17 +1018,17 @@ const BT_OFF = "M13 5.83l1.88 1.88-1.6 1.6 1.41 1.41 3.02-3.02L12 2h-1v5.03l2 2z
 
 // Options this card adds to the tile card's
 // The prototype panel card's own options, kept out of the tile card too
-const PANEL_KEYS = ["members", "member_features", "members_open"];
+const PANEL_KEYS = ["members", "member_features", "members_open", "members_toggle", "member_names", "member_state_content"];
 const OWN_KEYS = ["finish", "pattern", "vibration", "bluetooth", "finish_extent", "features_style", "_embedded", ...PANEL_KEYS];
 // The same keys and values as The Lampster card
-const FEATURES_STYLES = [["match", "Match style"], ["flat", "Flat"], ["inset", "Inset"]];
+const FEATURES_STYLES = sortPairs([["match", "Match style"], ["flat", "Flat"], ["inset", "Inset"]]);
 // The finish's base color, without grain or reflections, for Flat
-const FLAT = { black_ash: "#1a1a1d", black_oak: "#161617", gloss_black: "#101113", gloss_white: "#e7e9ed", fabric: "#2f2f31", grille: "#1d1e20" };
-const BLUETOOTH = [
+const FLAT = { black_ash: "#1a1a1d", black_oak: "#161617", gloss_black: "#101113", gloss_white: "#e7e9ed", fabric: "#1f1f21", grille: "#1d1e20" };
+const BLUETOOTH = sortPairs([
   ["tap", "Show, and tap to connect or disconnect"],
   ["status", "Show only when not connected"],
   ["off", "Hide"],
-];
+]);
 const FINISH_EXTENTS = [
   ["card", "Card"],
   ["container", "Container"],
@@ -1684,12 +1688,11 @@ class SvsCard extends HTMLElement {
 // ---------------------------------------------------------------------------
 const PANEL_TYPE = "svs-subwoofer-panel-card";
 const PANEL_EDITOR_TYPE = "svs-subwoofer-panel-card-editor";
-const MEMBER_FEATURES = [
+const MEMBER_FEATURES = sortPairs([
   ["volume", "Volume", "custom:svs-subwoofer-volume"],
   ["presets", "Preset (one button that loads the next)", "custom:svs-subwoofer-presets"],
   ["standby", "Standby mode", "custom:svs-subwoofer-standby"],
-];
-const CHEVRON = "M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z";
+]);
 
 /** Every single subwoofer's volume entity (not groups), as [entity_id, name]. */
 function subwoofers(hass) {
@@ -1699,6 +1702,13 @@ function subwoofers(hass) {
       const device = hass.devices?.[e.device_id];
       return [e.entity_id, device?.name_by_user || device?.name || e.entity_id];
     });
+}
+
+/** The names the rows show by default, by entity. */
+function defaultMemberNames(hass, ids) {
+  const all = Object.fromEntries(subwoofers(hass));
+  const names = shortNames(ids.map((id) => all[id] ?? id));
+  return Object.fromEntries(ids.map((id, i) => [id, names[i]]));
 }
 
 // Names without the part they all share ("Subwoofer Left", "Subwoofer Right"
@@ -1736,32 +1746,25 @@ class SvsPanelCard extends HTMLElement {
         }
         .dark { --primary-text-color: rgba(255, 255, 255, .95); --divider-color: rgba(255, 255, 255, .14); }
         .light { --primary-text-color: rgba(0, 0, 0, .85); --divider-color: rgba(0, 0, 0, .12); }
-        .handle {
-          display: flex; justify-content: center; width: 100%; height: 22px; padding: 0; border: 0; margin: 0;
-          background: transparent; color: var(--primary-text-color); cursor: pointer; opacity: .7;
-        }
-        .handle:hover { opacity: 1; }
-        .handle:focus-visible { outline: 2px solid var(--primary-color); outline-offset: -2px; border-radius: var(--ha-border-radius-sm, 4px); }
-        .handle svg { width: 22px; height: 22px; transition: transform 200ms ease-in-out; }
-        .open .handle svg { transform: rotate(180deg); }
-        .handle[hidden] { display: none; }
         .members { display: grid; }
         .members > * + * { border-top: 1px solid var(--divider-color); }
         .panel:not(.open) .members { display: none; }
-        @media (prefers-reduced-motion: reduce) { .handle svg { transition: none; } }
       </style>
       <div class="panel">
         <canvas></canvas>
         <div class="header"></div>
-        <button type="button" class="handle"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="${CHEVRON}"/></svg></button>
         <div class="members"></div>
       </div>`;
     this._panel = this.shadowRoot.querySelector(".panel");
     this._canvas = this.shadowRoot.querySelector("canvas");
     this._headerSlot = this.shadowRoot.querySelector(".header");
     this._membersSlot = this.shadowRoot.querySelector(".members");
-    this._handle = this.shadowRoot.querySelector(".handle");
-    this._handle.addEventListener("click", () => this._setOpen(!this._open));
+    // The header card's tap action shows or hides the rows (see setConfig)
+    this._panel.addEventListener("ll-custom", (ev) => {
+      if (ev.detail?.svs_subwoofer_panel !== "toggle") return;
+      ev.stopPropagation();
+      this._setOpen(!this._open);
+    });
     new ResizeObserver(() => this._paint()).observe(this._panel);
   }
 
@@ -1779,13 +1782,17 @@ class SvsPanelCard extends HTMLElement {
     // The header: the SVS Subwoofer card, without the panel's own options
     const header = { ...config, type: "custom:svs-subwoofer-card", _embedded: true };
     for (const key of PANEL_KEYS) delete header[key];
+    // A tap on the card shows or hides the rows (instead of its own tap action)
+    if (config.members_toggle !== false && (config.members ?? []).length) {
+      header.tap_action = { action: "fire-dom-event", svs_subwoofer_panel: "toggle" };
+    }
     if (!this._header) {
       this._header = document.createElement("svs-subwoofer-card");
       this._headerSlot.append(this._header);
     }
     this._header.setConfig(header);
     this._members = undefined;
-    this._open = this._storedOpen() ?? config.members_open !== false;
+    this._open = config.members_toggle === false ? true : this._storedOpen() ?? config.members_open !== false;
     this._buildMembers();
     this._apply();
   }
@@ -1828,8 +1835,8 @@ class SvsPanelCard extends HTMLElement {
       card.setConfig({
         type: "custom:svs-subwoofer-card",
         entity: id,
-        name: names[i],
-        state_content: ["state", "preset", "standby_mode"],
+        name: this._config.member_names?.[id] || names[i],
+        state_content: this._config.member_state_content ?? ["state", "preset", "standby_mode"],
         features,
         features_position: "inline",
         finish: this._config.finish ?? "none",
@@ -1843,7 +1850,6 @@ class SvsPanelCard extends HTMLElement {
       return card;
     });
     this._membersSlot.replaceChildren(...this._memberCards);
-    this._handle.hidden = ids.length === 0;
   }
 
   // The open state is remembered in this browser, per panel
@@ -1876,8 +1882,6 @@ class SvsPanelCard extends HTMLElement {
     this._panel.classList.toggle("finished", !!tone);
     this._panel.classList.toggle("dark", tone === "dark");
     this._panel.classList.toggle("light", tone === "light");
-    this._handle.setAttribute("aria-expanded", String(this._open));
-    this._handle.setAttribute("aria-label", this._open ? "Hide the subwoofers" : "Show the subwoofers");
     this._paint();
   }
 
@@ -2089,11 +2093,30 @@ class SvsPanelCardEditor extends SvsCardEditor {
     this._membersForm.addEventListener("value-changed", (ev) => {
       ev.stopPropagation();
       const v = ev.detail.value;
-      this._update({
-        members: v.members ?? [],
-        member_features: v.member_features ?? [],
-        members_open: v.members_open !== false,
+      const members = v.members ?? [];
+      // A name left empty uses the default name. When the subwoofers were
+      // added, removed or reordered, the name fields still hold the old
+      // order, so each subwoofer keeps the name it had.
+      const names = {};
+      const sameRows = JSON.stringify(members) === JSON.stringify(this._config.members ?? []);
+      members.forEach((id, i) => {
+        const name = sameRows ? (v[`name_${i}`] ?? "").trim() : this._config.member_names?.[id] ?? "";
+        if (name) names[id] = name;
       });
+      const changes = {
+        members,
+        member_features: v.member_features ?? [],
+        member_state_content: v.member_state_content,
+        members_toggle: v.members_toggle !== false,
+        members_open: v.members_open !== false,
+        member_names: names,
+      };
+      if (!changes.member_state_content?.length) delete changes.member_state_content;
+      this._update(changes);
+      if (!Object.keys(names).length) {
+        delete this._config.member_names;
+        this._fire();
+      }
     });
   }
 
@@ -2116,21 +2139,44 @@ class SvsPanelCardEditor extends SvsCardEditor {
 
   _renderMembers() {
     if (!this._membersForm || !this._config) return;
-    const options = subwoofers(this._hass).map(([value, label]) => ({ value, label }));
+    const options = sortPairs(subwoofers(this._hass)).map(([value, label]) => ({ value, label }));
+    const members = (this._config.members ?? []).filter((id) => this._hass?.states[id]);
+    const defaults = defaultMemberNames(this._hass, members);
+    // The state content picker lists the subwoofer's preset, standby mode and volume too
+    if (members.length) this._membersForm.hass = withSubwooferAttributes(this._hass, members[0]);
     this._membersForm.schema = [
       {
         name: "members", label: "Subwoofers shown, in order",
         helper: "Rows below the card, one per subwoofer. Leave empty for none.",
         selector: { select: { multiple: true, reorder: true, mode: "dropdown", options } },
       },
+      ...members.map((id, i) => ({
+        name: `name_${i}`, label: `Name for ${defaults[id]}`,
+        helper: "Leave empty to use this name.",
+        selector: { text: {} },
+      })),
       {
         name: "member_features", label: "Controls on each row, in order",
         helper: "They use the same settings as the card's own features of that kind.",
         selector: { select: { multiple: true, reorder: true, mode: "dropdown", options: MEMBER_FEATURES.map(([value, label]) => ({ value, label })) } },
       },
-      { name: "members_open", label: "Show the subwoofers when the page opens", selector: { boolean: {} } },
+      ...(members.length ? [{
+        name: "member_state_content", label: "State content on each row",
+        selector: { ui_state_content: { entity_id: members[0], allow_name: false } },
+      }] : []),
+      {
+        name: "members_toggle", label: "Tap the card to show or hide the subwoofers",
+        helper: "The card's tap behavior is replaced while this is on.",
+        selector: { boolean: {} },
+      },
+      ...(this._config.members_toggle === false ? [] : [
+        { name: "members_open", label: "Show the subwoofers when the page opens", selector: { boolean: {} } },
+      ]),
     ];
     this._membersForm.data = {
+      ...Object.fromEntries(members.map((id, i) => [`name_${i}`, this._config.member_names?.[id] ?? ""])),
+      member_state_content: this._config.member_state_content ?? ["state", "preset", "standby_mode"],
+      members_toggle: this._config.members_toggle !== false,
       members: this._config.members ?? [],
       member_features: this._config.member_features ?? ["volume"],
       members_open: this._config.members_open !== false,
