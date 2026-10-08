@@ -473,22 +473,32 @@ class SvsVolume extends HTMLElement {
         .fill { position: absolute; inset: 0 auto 0 0; background: var(--fill, var(--feature-color)); }
         .tick { position: absolute; top: 25%; bottom: 25%; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--primary-text-color); opacity: .35; }
         .handle { position: absolute; top: 25%; bottom: 25%; width: 4px; margin-left: -10px; border-radius: 2px; background: #fff; box-shadow: 0 0 2px rgba(0, 0, 0, .45); }
-        /* Inset: no bar; the whole range stays visible, and a round loupe of
-           glossy plastic in the volume's color marks the setting */
+        /* Inset: no bar, so the whole range stays visible. A round loupe in a
+           beveled bezel of the subwoofer's finish (--svs-bezel, set by the
+           card) magnifies the color the volume is set at, as on The Lampster
+           card's color temperature slider. */
         .loupe { display: none; }
         :host([svs-inset]) .fill, :host([svs-inset]) .handle { display: none; }
         :host([svs-inset]) .zones i { opacity: .5; }
         :host([svs-inset]) .loupe {
-          --size: calc(var(--feature-height, 42px) - 6px);
+          --size: calc(var(--feature-height, 42px) - 4px);
+          --bezel: var(--svs-bezel, var(--card-background-color, #c3c8cc));
           display: block; position: absolute; top: 50%; width: var(--size); height: var(--size);
-          left: clamp(calc(var(--size) / 2 + 3px), var(--at), calc(100% - var(--size) / 2 - 3px));
-          transform: translate(-50%, -50%); border-radius: 50%;
+          left: clamp(calc(var(--size) / 2 + 2px), var(--at), calc(100% - var(--size) / 2 - 2px));
+          transform: translate(-50%, -50%); border-radius: 50%; pointer-events: none;
+          background: conic-gradient(from 210deg,
+            color-mix(in srgb, var(--bezel), #fff 45%), color-mix(in srgb, var(--bezel), #000 45%) 25%,
+            color-mix(in srgb, var(--bezel), #fff 20%) 45%, color-mix(in srgb, var(--bezel), #000 50%) 65%,
+            color-mix(in srgb, var(--bezel), #fff 45%) 85%, var(--bezel));
+          box-shadow: 0 0 3px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.6), inset 0 -1px 0 rgba(0,0,0,.35);
+        }
+        :host([svs-inset]) .loupe::after {
+          content: ""; position: absolute; inset: 4px; border-radius: 50%;
           background:
-            radial-gradient(70% 55% at 34% 26%, rgba(255,255,255,.85), rgba(255,255,255,0) 60%),
-            radial-gradient(circle at 50% 120%, rgba(255,255,255,.35), rgba(255,255,255,0) 45%),
-            radial-gradient(circle, rgba(0,0,0,0) 58%, rgba(0,0,0,.28)),
+            radial-gradient(70% 55% at 32% 25%, rgba(255,255,255,.75), rgba(255,255,255,0) 60%),
+            radial-gradient(circle, rgba(0,0,0,0) 60%, rgba(0,0,0,.18)),
             var(--loupe);
-          box-shadow: 0 2px 4px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.7), inset 0 -2px 3px rgba(0,0,0,.35);
+          box-shadow: inset 0 0 3px rgba(0,0,0,.5);
         }
       </style>
       <div class="control" role="slider" tabindex="0" aria-label="Volume">
@@ -590,10 +600,10 @@ class SvsVolume extends HTMLElement {
     const handle = c.querySelector(".handle");
     handle.style.left = `${pct}%`;
     handle.style.display = known ? "" : "none";
-    // The loupe: the volume's threshold color, or plain glossy plastic
-    // (white on a white finish, black on the others) without thresholds
+    // The loupe shows the color it is on, at full strength: the volume's
+    // threshold color, or the feature color without thresholds
     c.style.setProperty("--at", `${pct}%`);
-    c.style.setProperty("--loupe", color ? cssColor(color) : "var(--svs-loupe-plain, #141518)");
+    c.style.setProperty("--loupe", color ? cssColor(color) : "var(--feature-color)");
     c.querySelector(".loupe").style.visibility = known ? "" : "hidden";
   }
 
@@ -872,6 +882,11 @@ const finishTone = (finish) => (finish === "gloss_white" ? "light" : finish === 
 // The solid backing behind each feature control on a finish
 const BACKING = { dark: "#1e1f22", light: "#eceef1" };
 const DEFAULT_PATTERN = 4242;
+// Each finish's color for the volume loupe's bezel
+const BEZEL = {
+  black_ash: "#24211f", black_oak: "#1f1b17", gloss_black: "#101113",
+  gloss_white: "#f3f4f6", fabric: "#1b1c1e", grille: "#2c2e33",
+};
 
 function rng(seed) {
   let s = seed >>> 0;
@@ -1219,7 +1234,6 @@ class SvsCard extends HTMLElement {
         .tile.dark { --primary-text-color: rgba(255, 255, 255, .95); --secondary-text-color: rgba(235, 235, 240, .7); text-shadow: 0 1px 2px rgba(0, 0, 0, .8); }
         .tile.light { --primary-text-color: rgba(0, 0, 0, .85); --secondary-text-color: rgba(40, 40, 48, .62); }
         /* Flat and Inset: no finish shows through a control */
-        .tile.light { --svs-loupe-plain: #f4f5f7; }
         .tile.dark.solid { --svs-feature-backing: ${BACKING.dark}; }
         .tile.light.solid { --svs-feature-backing: ${BACKING.light}; }
         /* With the finish on the expander card, this card is see-through */
@@ -1611,6 +1625,9 @@ class SvsCard extends HTMLElement {
     this._frame.classList.toggle("finished", !!tone);
     this._frame.classList.toggle("through", through);
     this._frame.classList.toggle("light-finish", tone === "light");
+    // The volume loupe's bezel is of the finish (the theme's card color without one)
+    if (BEZEL[finish]) this.style.setProperty("--svs-bezel", BEZEL[finish]);
+    else this.style.removeProperty("--svs-bezel");
     if (this._tile) {
       this._tile.classList.toggle("dark", tone === "dark");
       this._tile.classList.toggle("light", tone === "light");
@@ -1869,7 +1886,7 @@ class SvsPanelCard extends HTMLElement {
           box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16), inset 0 -1px 0 rgba(0, 0, 0, .4);
         }
         .dark { --primary-text-color: rgba(255, 255, 255, .95); --divider-color: rgba(255, 255, 255, .14); }
-        .light { --primary-text-color: rgba(0, 0, 0, .85); --divider-color: rgba(0, 0, 0, .12); --svs-loupe-plain: #f4f5f7; }
+        .light { --primary-text-color: rgba(0, 0, 0, .85); --divider-color: rgba(0, 0, 0, .12); }
         .members { display: grid; }
         .panel:not(.open) .members { display: none; }
       </style>
