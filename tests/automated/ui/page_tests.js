@@ -42,12 +42,25 @@
     return el;
   }
 
-  // An editor as the dashboard hosts it: every saved configuration is
-  // handed back to it, and kept here for the test to check
+  // The dashboard's lovelace object, which the dashboard gives every editor
+  function findDeep(root, selector, depth = 8) {
+    const found = root.querySelector?.(selector);
+    if (found || depth === 0) return found;
+    for (const el of root.querySelectorAll?.("*") ?? []) {
+      const hit = el.shadowRoot && findDeep(el.shadowRoot, selector, depth - 1);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  const lovelace = () => findDeep(document, "hui-root")?.lovelace;
+
+  // An editor as the dashboard hosts it: hass and lovelace set, and every
+  // saved configuration handed back to it (kept here for the test to check)
   function hosted(type, extra = {}) {
     const el = document.createElement(type);
     Object.assign(el, extra);
     el.hass = hass();
+    if (lovelace()) el.lovelace = lovelace();
     const saved = [];
     el.addEventListener("config-changed", (ev) => {
       saved.push(ev.detail.config);
@@ -91,6 +104,19 @@
       stage().replaceChildren();
     }
     const [first, second] = subVolumes();
+
+    // A control: Home Assistant's own tile card editor, hosted the same way.
+    // If this one has page errors, the harness is missing something.
+    await test("control: Home Assistant's tile card editor has no page errors", async () => {
+      if (!lovelace()) throw new Error("no lovelace object found on the dashboard");
+      const helpers = await window.loadCardHelpers();
+      helpers.createCardElement({ type: "tile", entity: first });
+      await customElements.whenDefined("hui-tile-card");
+      const { el } = hosted((await customElements.get("hui-tile-card").getConfigElement()).tagName.toLowerCase());
+      el.setConfig({ type: "tile", entity: first, state_content: ["state"] });
+      await until(() => el.shadowRoot?.querySelector("ha-form"), "the tile card editor");
+      await sleep(500);
+    });
 
     await test("card shows the driver and the Bluetooth badge", async () => {
       const card = document.createElement("svs-subwoofer-card");
