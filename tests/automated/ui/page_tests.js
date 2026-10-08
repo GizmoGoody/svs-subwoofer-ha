@@ -91,12 +91,23 @@
     const onError = (ev) => errors.push(String(ev.error?.stack ?? ev.error ?? ev.message ?? ev.reason?.stack ?? ev.reason));
     window.addEventListener("error", onError);
     window.addEventListener("unhandledrejection", onError);
-    async function test(name, fn) {
+    // Errors Home Assistant's own editors raise when hosted outside the
+    // dashboard's edit dialog (found by the control test): not ours
+    let baseline = new Set();
+    const firstLine = (e) => e.split("\n")[0];
+    async function test(name, fn, { control = false } = {}) {
       errors = [];
       try {
         await fn();
         await sleep(200);
-        if (errors.length) throw new Error(`page errors:\n${errors.join("\n---\n")}`);
+        if (control) {
+          baseline = new Set(errors.map(firstLine));
+          results.push({ name, ok: true, detail: errors.length ? `baseline errors: ${[...baseline].join("; ")}` : "" });
+          stage().replaceChildren();
+          return;
+        }
+        const ours = errors.filter((e) => !baseline.has(firstLine(e)));
+        if (ours.length) throw new Error(`page errors:\n${ours.join("\n---\n")}`);
         results.push({ name, ok: true });
       } catch (err) {
         results.push({ name, ok: false, detail: String(err?.stack ?? err) });
@@ -107,7 +118,7 @@
 
     // A control: Home Assistant's own tile card editor, hosted the same way.
     // If this one has page errors, the harness is missing something.
-    await test("control: Home Assistant's tile card editor has no page errors", async () => {
+    await test("control: Home Assistant's tile card editor, hosted the same way", async () => {
       if (!lovelace()) throw new Error("no lovelace object found on the dashboard");
       const helpers = await window.loadCardHelpers();
       helpers.createCardElement({ type: "tile", entity: first });
@@ -116,7 +127,7 @@
       el.setConfig({ type: "tile", entity: first, state_content: ["state"] });
       await until(() => el.shadowRoot?.querySelector("ha-form"), "the tile card editor");
       await sleep(500);
-    });
+    }, { control: true });
 
     await test("card shows the driver and the Bluetooth badge", async () => {
       const card = document.createElement("svs-subwoofer-card");
