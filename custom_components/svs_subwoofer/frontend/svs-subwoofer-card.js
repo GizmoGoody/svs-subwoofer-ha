@@ -53,7 +53,8 @@ const LIGHT_COLORS = ["yellow", "amber", "lime", "light-green", "white", "light-
 let colorProbe;
 function textOn(el, cssValue) {
   const resolved = cssValue.startsWith("var(") ? getComputedStyle(el).getPropertyValue(cssValue.slice(4, -1).split(",")[0].trim()).trim() : cssValue;
-  if (!resolved) return "#fff";
+  // Not known yet (the element is not on the page): the caller tries again
+  if (!resolved) return null;
   colorProbe ??= document.createElement("canvas").getContext("2d");
   colorProbe.fillStyle = "#000";
   colorProbe.fillStyle = resolved;
@@ -61,6 +62,25 @@ function textOn(el, cssValue) {
   const hex = colorProbe.fillStyle.startsWith("#") ? colorProbe.fillStyle.slice(1).match(/../g).map((h) => parseInt(h, 16)) : [r, g, b];
   const luma = (0.299 * hex[0] + 0.587 * hex[1] + 0.114 * hex[2]) / 255;
   return luma > 0.6 ? "rgba(0, 0, 0, .85)" : "#fff";
+}
+
+/**
+ * Set --svs-on-color on el from the feature color. Until the browser knows
+ * that color (the element is not on the page yet), try again on the next
+ * frame. Returns the color, or null while it is not known.
+ */
+function applyTextOn(el, rerender) {
+  const on = textOn(el, "var(--feature-color)");
+  if (on) {
+    el.style.setProperty("--svs-on-color", on);
+  } else if (!el._svsRetry) {
+    el._svsRetry = true;
+    requestAnimationFrame(() => {
+      el._svsRetry = false;
+      rerender();
+    });
+  }
+  return on;
 }
 
 const cssColor = (color) => (HA_COLORS.includes(color) ? `var(--${color}-color)` : color);
@@ -239,7 +259,11 @@ class SvsPresetButtons extends HTMLElement {
     const show = Array.isArray(this._config.presets_shown) ? this._config.presets_shown : null;
     const shown = show ? show.filter((n) => names.includes(n)) : names;
     const cycle = this._config.style === "presets_cycle";
-    const key = JSON.stringify([shown, stateObj?.state, this._config.presets, unavailable(stateObj), cycle]);
+    const on = applyTextOn(this, () => {
+      this._key = undefined;
+      this._render();
+    });
+    const key = JSON.stringify([shown, stateObj?.state, this._config.presets, unavailable(stateObj), cycle, on]);
     if (key === this._key) return;
     this._key = key;
     this._row.classList.toggle("disabled", unavailable(stateObj));
@@ -258,8 +282,6 @@ class SvsPresetButtons extends HTMLElement {
       if (look.color) {
         button.style.setProperty("--c", cssColor(look.color));
         if (isLight(look.color)) button.style.setProperty("--svs-on-color", "rgba(0, 0, 0, .85)");
-      } else {
-        button.style.setProperty("--svs-on-color", textOn(this, "var(--feature-color)"));
       }
       if (look.icon) {
         const icon = document.createElement("ha-icon");
@@ -771,11 +793,14 @@ class SvsStandby extends HTMLElement {
     const entity = sibling(this._hass, this._context.entity_id, "standby");
     const stateObj = entity ? this._hass.states[entity] : undefined;
     const options = (stateObj?.attributes.options ?? []).filter((o) => !NOT_PRESETS.includes(o));
-    const key = JSON.stringify([options, stateObj?.state, unavailable(stateObj)]);
+    const on = applyTextOn(this, () => {
+      this._key = undefined;
+      this._render();
+    });
+    const key = JSON.stringify([options, stateObj?.state, unavailable(stateObj), on]);
     if (key === this._key) return;
     this._key = key;
     this._row.classList.toggle("disabled", unavailable(stateObj));
-    this.style.setProperty("--svs-on-color", textOn(this, "var(--feature-color)"));
     this._row.replaceChildren(...options.map((option) => {
       const button = document.createElement("button");
       button.type = "button";
