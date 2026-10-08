@@ -1080,7 +1080,7 @@ function drawGrille(px, w, h, pattern) {
 function driverPicture(ring) {
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">` +
-    `<circle cx="20" cy="20" r="15.5" fill="#15171a" stroke="${ring}" stroke-width="2.4"/>` +
+    `<circle cx="20" cy="20" r="15.5" fill="#15171a" stroke="${ring ?? "#2a2d32"}" stroke-width="${ring ? 2.4 : 1.2}"/>` +
     `<circle cx="20" cy="20" r="12.6" fill="#24272c" stroke="#3a3e45" stroke-width="1.6"/>` +
     `<circle cx="20" cy="20" r="9.6" fill="#1a1c20"/>` +
     `<circle cx="20" cy="20" r="5.4" fill="#3d424a"/>` +
@@ -1095,7 +1095,7 @@ const BT_OFF = "M13 5.83l1.88 1.88-1.6 1.6 1.41 1.41 3.02-3.02L12 2h-1v5.03l2 2z
 // Options this card adds to the tile card's
 // The prototype panel card's own options, kept out of the tile card too
 const PANEL_KEYS = ["members", "members_open", "members_toggle"];
-const OWN_KEYS = ["finish", "pattern", "vibration", "bluetooth", "standby_badge", "finish_extent", "features_style", "_embedded", "_member_entities", ...PANEL_KEYS];
+const OWN_KEYS = ["finish", "pattern", "vibration", "bluetooth", "standby_badge", "driver_ring", "finish_extent", "features_style", "_embedded", "_member_entities", ...PANEL_KEYS];
 // The same keys and values as The Lampster card
 const FEATURES_STYLES = [["match", "Match style"], ["flat", "Flat"], ["inset", "Inset"]];
 // The finish's base color, without grain or reflections, for Flat
@@ -1431,7 +1431,7 @@ class SvsCard extends HTMLElement {
     const entity = this._config?.entity;
     const stateObj = hass.states[entity];
     if (!stateObj) return hass;
-    const picture = driverPicture(this._ringColor());
+    const picture = driverPicture(this._config.driver_ring === false ? null : this._ringColor());
     const extra = subwooferAttributes(hass, entity);
     const extraKey = JSON.stringify(extra);
     if (this._sourceState !== stateObj || this._lastPicture !== picture || this._lastExtra !== extraKey) {
@@ -2107,6 +2107,7 @@ class SvsCardEditor extends HTMLElement {
       this._update({
         finish: v.finish ?? "none", finish_extent: v.finish_extent ?? "card", features_style: v.features_style ?? "match",
         vibration: v.vibration !== false, bluetooth: v.bluetooth ?? "show", standby_badge: !!v.standby_badge,
+        driver_ring: v.driver_ring !== false,
       });
     });
     this.shadowRoot.getElementById("randomize").addEventListener("click", () => {
@@ -2179,6 +2180,11 @@ class SvsCardEditor extends HTMLElement {
         selector: { select: { mode: "dropdown", options: BLUETOOTH.map(([value, label]) => ({ value, label })) } },
       },
       {
+        name: "driver_ring", label: "Ring around the driver",
+        helper: "In the active preset's color, or the volume threshold's color.",
+        selector: { boolean: {} },
+      },
+      {
         name: "standby_badge", label: "Standby mode badge",
         helper: "A letter on the driver for the standby mode: A (Auto On), O (On) or T (Trigger).",
         selector: { boolean: {} },
@@ -2189,7 +2195,7 @@ class SvsCardEditor extends HTMLElement {
         selector: { boolean: {} },
       },
     ];
-    this._form.data = { finish: c.finish, finish_extent: c.finish_extent ?? "card", features_style: c.features_style ?? "match", vibration: c.vibration !== false, bluetooth: c.bluetooth ?? "show", standby_badge: !!c.standby_badge };
+    this._form.data = { finish: c.finish, finish_extent: c.finish_extent ?? "card", features_style: c.features_style ?? "match", vibration: c.vibration !== false, bluetooth: c.bluetooth ?? "show", standby_badge: !!c.standby_badge, driver_ring: c.driver_ring !== false };
     const label = RANDOMIZE_LABEL[c.finish];
     this.shadowRoot.getElementById("row").style.display = label ? "" : "none";
     this.shadowRoot.getElementById("randomize").textContent = label ?? "";
@@ -2472,6 +2478,7 @@ function explicit(config) {
   c.vibration = c.vibration !== false;
   c.bluetooth = BLUETOOTH.some(([id]) => id === c.bluetooth) ? c.bluetooth : "show";
   c.standby_badge = !!c.standby_badge;
+  c.driver_ring = c.driver_ring !== false;
   if (c.finish === "none") {
     delete c.pattern;
     delete c.finish_extent;
