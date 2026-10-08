@@ -682,6 +682,10 @@ class SvsVolume extends HTMLElement {
 }
 
 class SvsVolumeEditor extends HTMLElement {
+  connectedCallback() {
+    if (this._form) this._renderCopy();
+  }
+
   set hass(hass) {
     this._hass = hass;
     if (this._form) this._form.hass = hass;
@@ -705,8 +709,12 @@ class SvsVolumeEditor extends HTMLElement {
       this._note = document.createElement("div");
       this._note.className = "note";
       this._note.setAttribute("role", "status");
-      this.append(this._form, this._note);
+      this._copy = document.createElement("ha-button");
+      this._copy.textContent = "Copy the main subwoofer's Volume";
+      this._copy.addEventListener("click", () => this._copyMain());
+      this.append(this._copy, this._form, this._note);
     }
+    this._renderCopy();
     if (this._hass) this._form.hass = this._hass;
     const ranges = colorRanges(this._config);
     const on = ranges.length > 0;
@@ -745,6 +753,35 @@ class SvsVolumeEditor extends HTMLElement {
         color_3: ranges[2]?.color,
       }
       : { ...range, colored: false };
+  }
+
+  /**
+   * The main subwoofer's volume settings, when this editor is in a row of the
+   * panel card: the row's tile editor (an ancestor, across shadow roots)
+   * provides them as svsMainVolume.
+   */
+  _mainVolume() {
+    for (let n = this.parentNode ?? this.getRootNode()?.host; n; n = n.parentNode ?? n.host) {
+      if (typeof n.svsMainVolume === "function") return { source: true, volume: n.svsMainVolume() };
+    }
+    return { source: false };
+  }
+
+  _renderCopy() {
+    const { source, volume } = this._mainVolume();
+    this._copy.hidden = !source;
+    this._copy.disabled = !volume;
+    this._copy.title = volume ? "" : "The main subwoofer has no SVS Subwoofer volume feature";
+  }
+
+  // The main subwoofer's range and thresholds replace this row's
+  _copyMain() {
+    const { volume } = this._mainVolume();
+    if (!volume) return;
+    this._config = { ...JSON.parse(JSON.stringify(volume)), type: this._config.type };
+    this._note.textContent = "";
+    this._render();
+    fire(this, "config-changed", { config: this._config });
   }
 
   _changed(ev) {
@@ -2496,24 +2533,6 @@ class SvsPanelCardEditor extends HTMLElement {
       members.splice(index + 1, 0, copy);
       update(members, index + 1);
     };
-    // The card's volume feature settings (range and thresholds), copied to
-    // this row's volume feature (added if the row has none)
-    const cardVolume = (this._config.features ?? []).find((f) => f.type === "custom:svs-subwoofer-volume");
-    const copyVolume = document.createElement("ha-button");
-    copyVolume.textContent = "Copy the card's volume settings";
-    copyVolume.disabled = !cardVolume;
-    copyVolume.title = cardVolume ? "Use the card's volume range and thresholds on this row" : "The card has no SVS Subwoofer volume feature";
-    copyVolume.addEventListener("click", () => {
-      const row = JSON.parse(JSON.stringify(this._members[index]));
-      const features = row.features ?? [];
-      const at = features.findIndex((f) => f.type === "custom:svs-subwoofer-volume");
-      if (at >= 0) features[at] = JSON.parse(JSON.stringify(cardVolume));
-      else features.push(JSON.parse(JSON.stringify(cardVolume)));
-      row.features = features;
-      const members = [...this._members];
-      members[index] = row;
-      update(members, index);
-    });
     buttons.append(
       button(MDI.copy, "Duplicate", false, duplicate),
       button(MDI.left, "Move before", index === 0, () => move(-1)),
@@ -2523,12 +2542,14 @@ class SvsPanelCardEditor extends HTMLElement {
         update(members, Math.max(0, index - 1));
       }),
     );
-    options.append(copyVolume, buttons);
+    options.append(buttons);
     this._body.replaceChildren(options);
     const editor = await createTileEditor(member.entity);
     if (this._selected !== index) return;  // another tab was chosen meanwhile
     // Only single subwoofers' volumes in the entity picker
     editor.svsEntities = svsVolumes(this._hass, false);
+    // The volume settings editor in this row offers the main subwoofer's
+    editor.svsMainVolume = () => (this._config.features ?? []).find((f) => f.type === "custom:svs-subwoofer-volume");
     editor.addEventListener("config-changed", (ev) => {
       ev.stopPropagation();
       const next = { ...ev.detail.config };
