@@ -512,7 +512,7 @@ class SvsVolume extends HTMLElement {
     // end: it ends at the last position the drag reached instead
     this._control.addEventListener("pointercancel", () => this._up());
     this._control.addEventListener("lostpointercapture", () => this._up());
-    this._control.addEventListener("keydown", (ev) => this._key(ev));
+    this._control.addEventListener("keydown", (ev) => this._keyDown(ev));
     this._control.addEventListener("keyup", () => this._keyUp());
     keepTaps(this);
   }
@@ -638,7 +638,7 @@ class SvsVolume extends HTMLElement {
     this._moved(false, value);
   }
 
-  _key(ev) {
+  _keyDown(ev) {
     const { min, max, step } = this._limits;
     const delta = { ArrowRight: step, ArrowUp: step, ArrowLeft: -step, ArrowDown: -step, PageUp: 5 * step, PageDown: -5 * step }[ev.key];
     if (delta === undefined) return;
@@ -710,7 +710,7 @@ class SvsVolumeEditor extends HTMLElement {
       this._note.className = "note";
       this._note.setAttribute("role", "status");
       this._copy = document.createElement("ha-button");
-      this._copy.textContent = "Copy the main subwoofer's Volume";
+      this._copy.textContent = "Copy from main";
       this._copy.addEventListener("click", () => this._copyMain());
       this.append(this._copy, this._form, this._note);
     }
