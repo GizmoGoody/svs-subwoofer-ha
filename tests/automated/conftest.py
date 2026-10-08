@@ -136,6 +136,7 @@ class FakeSubwoofer:
     - Writes are applied but not echoed
     - silent=True accepts the connection and answers nothing
     - ignore_loads=N ignores the next N preset loads, as if they were lost
+    - lose_names={slot: N} loses the next N name replies for a preset slot
     """
 
     def __init__(self) -> None:
@@ -154,6 +155,7 @@ class FakeSubwoofer:
         self.packing = "separate"
         self.silent = False
         self.ignore_loads = 0
+        self.lose_names: dict[int, int] = {}
         self.client: FakeBleakClient | None = None
         self.connects = 0
         self.received: list[bytes] = []
@@ -189,6 +191,10 @@ class FakeSubwoofer:
                     )
                 return replies
             if 8 <= memory_id <= 10:
+                slot = memory_id - 7
+                if self.lose_names.get(slot):
+                    self.lose_names[slot] -= 1
+                    return []
                 name = self.preset_names[memory_id - 8].encode().ljust(8, b"\x00")
                 return [read_response(memory_id, 0, name)]
             return []

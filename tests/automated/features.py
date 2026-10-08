@@ -45,6 +45,8 @@ FEATURES: dict[str, Callable[[], bool]] = {
     "preset_detection": lambda: _has("const", "PRESET_MANUAL"),
     "quiet_preset_load": lambda: _has("coordinator", "PRESET_SETTLE_DELAY"),
     "preset_load_retry": lambda: _has("coordinator", "PRESET_LOAD_ATTEMPTS"),
+    # Lost preset name replies are asked for again
+    "preset_name_retry": lambda: _has("coordinator", "NAME_READ_ATTEMPTS"),
     # PR 11
     "clean_shutdown": lambda: _source_contains("", "EVENT_HOMEASSISTANT_STOP"),
     # PR 12
