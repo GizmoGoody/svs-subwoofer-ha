@@ -57,6 +57,14 @@ async def test_card_ui(
         "key": "onboarding",
         "data": {"done": ["user", "core_config", "analytics", "integration"]},
     }
+    # A stored dashboard: only a dashboard page provides the card helpers
+    # that editors load the tile card's editor with
+    hass_storage["lovelace"] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": "lovelace",
+        "data": {"config": {"views": [{"title": "Test", "path": "test", "cards": []}]}},
+    }
     # The frontend first, so the integration can add its card to it
     assert await async_setup_component(hass, "frontend", {})
     await setup_entry()

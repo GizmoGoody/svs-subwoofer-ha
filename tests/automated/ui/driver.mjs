@@ -84,7 +84,7 @@ try {
   await send("Page.addScriptToEvaluateOnNewDocument", {
     source: `localStorage.setItem("hassTokens", ${JSON.stringify(JSON.stringify(tokens))});`,
   });
-  await send("Page.navigate", { url: `${base}/` });
+  await send("Page.navigate", { url: `${base}/lovelace/test` });
   // The card file, from the address the integration serves it at (current
   // Home Assistant opens its Home dashboard, which loads no dashboard resources)
   const loaded = await evaluate(`(async () => {
@@ -95,14 +95,14 @@ try {
         imported = true;
         await import("/svs_subwoofer/svs-subwoofer-card.js");
       }
-      if (hass?.connected && customElements.get("svs-subwoofer-card")) return { ok: true };
+      if (hass?.connected && customElements.get("svs-subwoofer-card") && window.loadCardHelpers) return { ok: true };
       await new Promise((r) => setTimeout(r, 100));
     }
     const hass = document.querySelector("home-assistant")?.hass;
     return {
       ok: false, url: location.href, title: document.title,
       app: !!document.querySelector("home-assistant"), hass: !!hass, connected: !!hass?.connected,
-      card: !!customElements.get("svs-subwoofer-card"),
+      card: !!customElements.get("svs-subwoofer-card"), helpers: !!window.loadCardHelpers,
       resources: [...document.querySelectorAll("script")].map((s) => s.src).filter(Boolean),
       body: document.body?.innerText?.slice(0, 500),
     };
