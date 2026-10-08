@@ -31,6 +31,8 @@ const ROLES = {
   volume: ["group_volume", "volume"],
   standby: ["group_standby_mode", "standby_mode"],
   connected: ["connected"],
+  reconnect: ["reconnect"],
+  disconnect: ["disconnect"],
 };
 // States that are not presets: never shown as a preset button
 const NOT_PRESETS = ["Manual", "Mixed"];
@@ -102,6 +104,16 @@ const unavailable = (stateObj) => !stateObj || stateObj.state === "unavailable";
 const fire = (el, type, detail) =>
   el.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: true }));
 
+/**
+ * Keep taps on a control from reaching the cards around it, such as an
+ * expander card whose header opens and closes on a tap.
+ */
+function keepTaps(el) {
+  for (const type of ["click", "touchstart", "touchend", "mousedown", "mouseup"]) {
+    el.addEventListener(type, (ev) => ev.stopPropagation());
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Shared feature styles: Home Assistant's feature variables, with a solid
 // backing behind each control when the SVS card draws a finish
@@ -142,9 +154,11 @@ class SvsPresetButtons extends HTMLElement {
         button > * { position: relative; }
         ha-icon { --mdc-icon-size: 22px; }
         span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .cycle { gap: 6px; grid-auto-flow: column; justify-content: center; align-items: center; }
       </style>
       <div class="row" role="group" aria-label="Preset"></div>`;
     this._row = this.shadowRoot.querySelector(".row");
+    keepTaps(this);
   }
 
   static getStubConfig() {
@@ -183,10 +197,15 @@ class SvsPresetButtons extends HTMLElement {
     const names = (stateObj?.attributes.options ?? []).filter((n) => !NOT_PRESETS.includes(n));
     const show = Array.isArray(this._config.presets_shown) ? this._config.presets_shown : null;
     const shown = show ? show.filter((n) => names.includes(n)) : names;
-    const key = JSON.stringify([shown, stateObj?.state, this._config.presets, unavailable(stateObj)]);
+    const cycle = this._config.style === "cycle";
+    const key = JSON.stringify([shown, stateObj?.state, this._config.presets, unavailable(stateObj), cycle]);
     if (key === this._key) return;
     this._key = key;
     this._row.classList.toggle("disabled", unavailable(stateObj));
+    if (cycle) {
+      this._row.replaceChildren(this._cycleButton(entity, stateObj, shown));
+      return;
+    }
     this._row.replaceChildren(...shown.map((name) => {
       const own = this._config.presets?.[name] ?? {};
       const look = { ...presetDefaults(name), ...own };
@@ -217,6 +236,41 @@ class SvsPresetButtons extends HTMLElement {
       });
       return button;
     }));
+  }
+
+  /**
+   * One button showing the active preset; each tap loads the next one, in the
+   * order shown. From Manual (or an unknown preset) it loads the first.
+   */
+  _cycleButton(entity, stateObj, shown) {
+    const current = stateObj?.state;
+    const active = shown.includes(current);
+    const look = active ? { ...presetDefaults(current), ...(this._config.presets?.[current] ?? {}) } : {};
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "cycle";
+    const next = shown.length ? shown[(shown.indexOf(current) + 1) % shown.length] : undefined;
+    button.title = next ? `Load ${next}` : "";
+    button.setAttribute("aria-label", `Preset: ${current ?? "unknown"}${next ? `. Select to load ${next}` : ""}`);
+    button.setAttribute("aria-pressed", String(active));
+    if (look.color) {
+      button.style.setProperty("--c", cssColor(look.color));
+      if (isLight(look.color)) button.style.setProperty("--svs-on-color", "rgba(0, 0, 0, .85)");
+    }
+    if (look.icon) {
+      const icon = document.createElement("ha-icon");
+      icon.icon = look.icon;
+      icon.setAttribute("icon", look.icon);
+      button.append(icon);
+    }
+    const label = document.createElement("span");
+    label.textContent = current && current !== "unknown" ? current : "Preset";
+    button.append(label);
+    button.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      if (next) this._hass.callService("select", "select_option", { entity_id: entity, option: next });
+    });
+    return button;
   }
 }
 
@@ -249,7 +303,7 @@ class SvsPresetButtonsEditor extends HTMLElement {
           const color = value[`color_${name}`], icon = value[`icon_${name}`];
           if (color || icon) presets[name] = { ...(color ? { color } : {}), ...(icon ? { icon } : {}) };
         }
-        const config = { type: this._config.type, presets };
+        const config = { type: this._config.type, ...(value.style === "cycle" ? { style: "cycle" } : {}), presets };
         // Kept only when it differs from the default (every preset, in slot order)
         if (Array.isArray(value.presets_shown) && JSON.stringify(value.presets_shown) !== JSON.stringify(this._names())) {
           config.presets_shown = value.presets_shown;
@@ -263,6 +317,13 @@ class SvsPresetButtonsEditor extends HTMLElement {
     this._form.hass = this._hass;
     this._form.schema = [
       {
+        name: "style", label: "Style",
+        selector: { select: { mode: "dropdown", options: [
+          { value: "buttons", label: "A button for each preset" },
+          { value: "cycle", label: "One button that loads the next preset" },
+        ] } },
+      },
+      {
         name: "presets_shown", label: "Presets shown, in order",
         selector: { select: { multiple: true, reorder: true, mode: "dropdown", options: names } },
       },
@@ -273,7 +334,7 @@ class SvsPresetButtonsEditor extends HTMLElement {
         ],
       })),
     ];
-    const data = { presets_shown: this._config.presets_shown ?? names };
+    const data = { style: this._config.style === "cycle" ? "cycle" : "buttons", presets_shown: this._config.presets_shown ?? names };
     for (const name of names) {
       const look = { ...presetDefaults(name), ...(this._config.presets?.[name] ?? {}) };
       data[`color_${name}`] = look.color;
@@ -333,6 +394,7 @@ class SvsVolume extends HTMLElement {
     this._control.addEventListener("pointercancel", (ev) => this._up(ev));
     this._control.addEventListener("keydown", (ev) => this._key(ev));
     this._control.addEventListener("keyup", () => this._keyUp());
+    keepTaps(this);
   }
 
   static getStubConfig() {
@@ -584,6 +646,7 @@ class SvsStandby extends HTMLElement {
       </style>
       <div class="control" role="group" aria-label="Standby mode"><div class="tint"></div></div>`;
     this._control = this.shadowRoot.querySelector(".control");
+    keepTaps(this);
   }
 
   static getStubConfig() {
@@ -798,10 +861,20 @@ function driverPicture(ring) {
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
+const BT_ON = "M14.88,16.29L13,18.17V14.41M13,5.83L14.88,7.71L13,9.58M17.71,7.71L12,2H11V9.58L6.41,5L5,6.41L10.59,12L5,17.58L6.41,19L11,14.41V22H12L17.71,16.29L13.41,12L17.71,7.71Z";
 const BT_OFF = "M13 5.83l1.88 1.88-1.6 1.6 1.41 1.41 3.02-3.02L12 2h-1v5.03l2 2zM5.41 4L4 5.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l4.29-4.29 2.3 2.29L20 18.59 5.41 4zM13 18.17v-3.76l1.88 1.88L13 18.17z";
 
 // Options this card adds to the tile card's
-const OWN_KEYS = ["finish", "pattern", "vibration"];
+const OWN_KEYS = ["finish", "pattern", "vibration", "bluetooth", "finish_area"];
+const BLUETOOTH = [
+  ["tap", "Show, and tap to connect or disconnect"],
+  ["status", "Show only when not connected"],
+  ["off", "Hide"],
+];
+const FINISH_AREAS = [
+  ["card", "This card"],
+  ["expander", "The expander card around it"],
+];
 
 function tileConfig(config) {
   const tile = { ...config, type: "tile", show_entity_picture: true };
@@ -846,22 +919,36 @@ class SvsCard extends HTMLElement {
           --primary-text-color: rgba(0, 0, 0, .85); --secondary-text-color: rgba(40, 40, 48, .62);
           --svs-feature-backing: ${BACKING.light};
         }
+        /* With the finish on the expander card, this card is see-through */
+        .through .tile {
+          --ha-card-background: transparent; --card-background-color: transparent;
+          --ha-card-box-shadow: none; --ha-card-border-color: transparent;
+          --ha-card-backdrop-filter: none;
+        }
+        .through canvas, .through::after { display: none; }
         .badge {
-          position: absolute; z-index: 3; width: 16px; height: 16px; display: none; place-items: center;
+          position: absolute; z-index: 3; width: 18px; height: 18px; padding: 0; border: 0; display: none; place-items: center;
           border-radius: var(--ha-border-radius-pill, 9999px);
           background: var(--ha-card-background, var(--card-background-color, #fff));
-          color: var(--secondary-text-color); pointer-events: none;
+          color: var(--secondary-text-color); pointer-events: none; cursor: default;
         }
         .badge.on { display: grid; }
-        .badge svg { width: 12px; height: 12px; }
+        .badge.connected { color: var(--blue-color, #2196f3); }
+        .badge.tappable { pointer-events: auto; cursor: pointer; }
+        /* A larger area to tap than the badge itself */
+        .badge.tappable::before { content: ""; position: absolute; inset: -8px; }
+        .badge:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+        .badge svg { width: 13px; height: 13px; }
       </style>
       <div class="frame">
         <canvas></canvas>
-        <div class="badge" title="Not connected"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="${BT_OFF}"/></svg></div>
+        <button type="button" class="badge"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="${BT_OFF}"/></svg></button>
       </div>`;
     this._frame = this.shadowRoot.querySelector(".frame");
     this._canvas = this.shadowRoot.querySelector("canvas");
     this._badge = this.shadowRoot.querySelector(".badge");
+    keepTaps(this._badge);
+    this._badge.addEventListener("click", () => this._toggleConnection());
     this._resize = new ResizeObserver(() => this._layout());
     this._resize.observe(this._frame);
     // The volume feature reports while its slider moves
@@ -904,7 +991,9 @@ class SvsCard extends HTMLElement {
       });
     }
     this._drawn = undefined;
+    this._expanderDrawn = undefined;
     this._layout();
+    if (this._hass) this._updateBadge();
   }
 
   _createTile(tile) {
@@ -1093,12 +1182,35 @@ class SvsCard extends HTMLElement {
     this._shaking = driver.animate(frames, { duration: 90, iterations: duration ? Math.max(1, Math.round(duration / 90)) : Infinity });
   }
 
-  // The Bluetooth badge on the icon while a subwoofer is not connected
+  /**
+   * The Bluetooth badge on the driver: the connection status, and (by
+   * default) a tap connects or disconnects. A group has no connection of its
+   * own, so it has no badge.
+   */
   _updateBadge() {
+    const mode = this._config?.bluetooth ?? "tap";
     const id = this._entities.connected;
-    const off = !!id && this._hass?.states[id]?.state === "off";
-    this._badge.classList.toggle("on", off);
-    if (off) this._placeBadge();
+    const connected = !!id && this._hass?.states[id]?.state === "on";
+    const show = !!id && (mode === "tap" || (mode === "status" && !connected));
+    this._badge.classList.toggle("on", show);
+    this._badge.classList.toggle("connected", connected);
+    this._badge.classList.toggle("tappable", mode === "tap");
+    this._badge.querySelector("path").setAttribute("d", connected ? BT_ON : BT_OFF);
+    const label = connected
+      ? (mode === "tap" ? "Connected. Select to disconnect" : "Connected")
+      : (mode === "tap" ? "Not connected. Select to connect" : "Not connected");
+    this._badge.title = label;
+    this._badge.setAttribute("aria-label", label);
+    this._badge.tabIndex = mode === "tap" ? 0 : -1;
+    if (show) this._placeBadge();
+  }
+
+  _toggleConnection() {
+    if ((this._config?.bluetooth ?? "tap") !== "tap" || !this._hass) return;
+    const id = this._entities.connected;
+    const connected = this._hass.states[id]?.state === "on";
+    const button = sibling(this._hass, this._config.entity, connected ? "disconnect" : "reconnect");
+    if (button) this._hass.callService("button", "press", { entity_id: button });
   }
 
   _placeBadge() {
@@ -1106,21 +1218,33 @@ class SvsCard extends HTMLElement {
     if (!icon) return;
     const frame = this._frame.getBoundingClientRect(), box = icon.getBoundingClientRect();
     const scale = frame.width / this._frame.offsetWidth || 1;
-    this._badge.style.left = `${(box.right - frame.left) / scale - 13}px`;
-    this._badge.style.top = `${(box.top - frame.top) / scale - 3}px`;
+    this._badge.style.left = `${(box.right - frame.left) / scale - 14}px`;
+    this._badge.style.top = `${(box.top - frame.top) / scale - 4}px`;
+  }
+
+  connectedCallback() {
+    this._layout();
+  }
+
+  disconnectedCallback() {
+    this._expanderResize?.disconnect();
+    this._expanderResize = undefined;
   }
 
   _layout() {
     if (!this._config) return;
     const finish = this._config.finish;
     const tone = finishTone(finish);
+    const onExpander = !!tone && this._config.finish_area === "expander";
     this._frame.classList.toggle("finished", !!tone);
+    this._frame.classList.toggle("through", onExpander);
     if (this._tile) {
       this._tile.classList.toggle("dark", tone === "dark");
       this._tile.classList.toggle("light", tone === "light");
     }
     if (this._badge.classList.contains("on")) this._placeBadge();
-    if (!tone) return;
+    this._paintExpander(onExpander);
+    if (!tone || onExpander) return;
     const w = this._frame.clientWidth, h = this._frame.clientHeight;
     if (!w || !h) return;
     const pattern = Number.isFinite(this._config.pattern) ? this._config.pattern : DEFAULT_PATTERN;
@@ -1130,6 +1254,64 @@ class SvsCard extends HTMLElement {
     this._canvas.width = w;
     this._canvas.height = h;
     drawFinish(this._canvas.getContext("2d"), finish, pattern, w, h);
+  }
+
+  /**
+   * The expander card (custom:expander-card) this card sits in, and whether
+   * this card is its header (title card).
+   */
+  _findExpander() {
+    let node = this, header = false;
+    while (node) {
+      if (node.classList?.contains("title-card-container")) header = true;
+      if (node.tagName === "EXPANDER-CARD") return { expander: node, header };
+      node = node.parentNode ?? node.host;
+    }
+    return undefined;
+  }
+
+  /**
+   * With "The expander card around it", the finish covers the whole expander
+   * card, so the header and the cards inside it read as one card. The header
+   * card draws it; the cards inside are see-through. This styles the
+   * expander card from outside; if a change to that card breaks it, the
+   * expander keeps its usual background.
+   */
+  _paintExpander(on) {
+    const found = this._findExpander();
+    const root = found?.expander.shadowRoot;
+    if (!root) return;
+    let style = root.getElementById("svs-subwoofer-finish");
+    if (!on || !found.header) {
+      if (!on && found.header) style?.remove();
+      return;
+    }
+    const surface = root.querySelector("ha-card");
+    if (!surface) return;
+    if (!this._expanderResize) {
+      this._expanderResize = new ResizeObserver(() => {
+        clearTimeout(this._expanderTimer);
+        this._expanderTimer = setTimeout(() => this._paintExpander(this._config?.finish_area === "expander" && !!finishTone(this._config?.finish)), 150);
+      });
+      this._expanderResize.observe(surface);
+    }
+    const w = surface.clientWidth, h = surface.clientHeight;
+    if (!w || !h) return;
+    const pattern = Number.isFinite(this._config.pattern) ? this._config.pattern : DEFAULT_PATTERN;
+    const key = `${this._config.finish}|${pattern}|${w}x${h}`;
+    if (key === this._expanderDrawn && style) return;
+    this._expanderDrawn = key;
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    drawFinish(canvas.getContext("2d"), this._config.finish, pattern, w, h);
+    if (!style) {
+      style = document.createElement("style");
+      style.id = "svs-subwoofer-finish";
+      root.append(style);
+    }
+    style.textContent = `ha-card { background: url("${canvas.toDataURL()}") center / 100% 100% no-repeat !important; ` +
+      "box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16), inset 0 -1px 0 rgba(0, 0, 0, .4) !important; }";
   }
 }
 
@@ -1213,7 +1395,10 @@ class SvsCardEditor extends HTMLElement {
     this._form.addEventListener("value-changed", (ev) => {
       ev.stopPropagation();
       const v = ev.detail.value;
-      this._update({ finish: v.finish ?? "none", vibration: v.vibration !== false });
+      this._update({
+        finish: v.finish ?? "none", finish_area: v.finish_area ?? "card",
+        vibration: v.vibration !== false, bluetooth: v.bluetooth ?? "tap",
+      });
     });
     this.shadowRoot.getElementById("randomize").addEventListener("click", () => {
       this._update({ pattern: 1 + Math.floor(Math.random() * 99999) });
@@ -1270,13 +1455,23 @@ class SvsCardEditor extends HTMLElement {
     const c = this._config;
     this._form.schema = [
       { name: "finish", label: "Finish", selector: { select: { mode: "dropdown", options: FINISHES.map(([value, label]) => ({ value, label })) } } },
+      ...(c.finish === "none" ? [] : [{
+        name: "finish_area", label: "Finish covers",
+        helper: "In an expander card, choose The expander card around it on the header card, and on each card inside it: the header draws the finish across the whole expander, and the cards inside let it show through.",
+        selector: { select: { mode: "dropdown", options: FINISH_AREAS.map(([value, label]) => ({ value, label })) } },
+      }]),
+      {
+        name: "bluetooth", label: "Bluetooth badge",
+        helper: "On a subwoofer's card. A subwoofer group has no connection of its own, so its card has no badge.",
+        selector: { select: { mode: "dropdown", options: BLUETOOTH.map(([value, label]) => ({ value, label })) } },
+      },
       {
         name: "vibration", label: "Shake when the volume or preset changes",
         helper: "The driver shakes harder at a higher volume. It stays still for anyone who has reduced motion turned on.",
         selector: { boolean: {} },
       },
     ];
-    this._form.data = { finish: c.finish, vibration: c.vibration !== false };
+    this._form.data = { finish: c.finish, finish_area: c.finish_area ?? "card", vibration: c.vibration !== false, bluetooth: c.bluetooth ?? "tap" };
     const label = RANDOMIZE_LABEL[c.finish];
     this.shadowRoot.getElementById("row").style.display = label ? "" : "none";
     this.shadowRoot.getElementById("randomize").textContent = label ?? "";
@@ -1301,8 +1496,14 @@ function explicit(config) {
   const c = { ...config };
   c.finish = FINISHES.some(([id]) => id === c.finish) ? c.finish : "none";
   c.vibration = c.vibration !== false;
-  if (c.finish === "none") delete c.pattern;
-  else c.pattern = Number.isFinite(c.pattern) ? c.pattern : DEFAULT_PATTERN;
+  c.bluetooth = BLUETOOTH.some(([id]) => id === c.bluetooth) ? c.bluetooth : "tap";
+  if (c.finish === "none") {
+    delete c.pattern;
+    delete c.finish_area;
+  } else {
+    c.pattern = Number.isFinite(c.pattern) ? c.pattern : DEFAULT_PATTERN;
+    c.finish_area = FINISH_AREAS.some(([id]) => id === c.finish_area) ? c.finish_area : "card";
+  }
   return c;
 }
 
