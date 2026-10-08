@@ -2029,10 +2029,23 @@ class SvsPanelCard extends HTMLElement {
 // Tile card options this card sets itself, so they are left out of its editor
 const HIDDEN_TILE_OPTIONS = ["icon", "show_entity_picture"];
 
-function hideOptions(schema) {
+function hideOptions(schema, entities) {
   return schema
     .filter((item) => !HIDDEN_TILE_OPTIONS.includes(item.name))
-    .map((item) => (Array.isArray(item.schema) ? { ...item, schema: hideOptions(item.schema) } : item));
+    .map((item) => {
+      if (Array.isArray(item.schema)) return { ...item, schema: hideOptions(item.schema, entities) };
+      // The entity picker offers only the volumes this card works with
+      if (item.name === "entity" && entities) return { ...item, selector: { entity: { include_entities: entities } } };
+      return item;
+    });
+}
+
+/** The SVS volume entities: every subwoofer's, and with groups, every group's. */
+function svsVolumes(hass, groups = true) {
+  return Object.values(hass?.entities ?? {})
+    .filter((e) => e.platform === DOMAIN && (e.translation_key === "volume" || (groups && e.translation_key === "group_volume")))
+    .map((e) => e.entity_id)
+    .sort();
 }
 
 /**
@@ -2050,12 +2063,14 @@ function tileEditorType() {
       super();
       const original = this._schema;
       if (typeof original !== "function") return;
-      let lastIn, lastOut;
+      let lastIn, lastKey, lastOut;
       this._schema = (...args) => {
         const schema = original.apply(this, args);
-        if (schema !== lastIn) {
+        const key = (this.svsEntities ?? []).join(",");
+        if (schema !== lastIn || key !== lastKey) {
           lastIn = schema;
-          lastOut = Array.isArray(schema) ? hideOptions(schema) : schema;
+          lastKey = key;
+          lastOut = Array.isArray(schema) ? hideOptions(schema, this.svsEntities) : schema;
         }
         return lastOut;
       };
@@ -2151,6 +2166,7 @@ class SvsCardEditor extends HTMLElement {
           this._config = next;
           this._fire();
         });
+        editor.svsEntities = svsVolumes(this._hass);
         editor.hass = withSubwooferAttributes(this._hass, this._config.entity);
         if (this._lovelace) editor.lovelace = this._lovelace;
         this.shadowRoot.getElementById("tile").replaceWith(editor);
