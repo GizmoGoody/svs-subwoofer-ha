@@ -29,7 +29,7 @@ from .const import (
 )
 from .coordinator import SVSSubwooferCoordinator
 from .helpers import preset_option_names
-from .subwoofer_group import SVSGroup, SVSGroupEntity, active_preset_name
+from .subwoofer_group import SVSGroup, SVSGroupEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -252,23 +252,7 @@ class SVSGroupPresetSelect(SVSGroupEntity, SelectEntity):
         Manual when every member is in Manual, the preset's name when every
         member has a preset of that name active, and Mixed otherwise.
         """
-        coordinators = self.svs_group.coordinators().values()
-        names = [active_preset_name(coordinator) for coordinator in coordinators]
-        if not names or None in names:
-            return None
-        if len({name.casefold() for name in names}) > 1:
-            return GROUP_STATE_MIXED
-        if names[0] == PRESET_MANUAL_OPTION:
-            return PRESET_MANUAL_OPTION
-        # Use the spelling shown in the options
-        return next(
-            (
-                option
-                for option in self.svs_group.matched_presets()
-                if option.casefold() == names[0].casefold()
-            ),
-            GROUP_STATE_MIXED,
-        )
+        return self.svs_group.active_preset()
 
     async def async_select_option(self, option: str) -> None:
         """Load the preset with this name on every member."""
