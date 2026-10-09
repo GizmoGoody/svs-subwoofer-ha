@@ -172,17 +172,17 @@ function keepTaps(el) {
 
 // ---------------------------------------------------------------------------
 // Shared feature styles: Home Assistant's feature variables. On the SVS card,
-// Flat and Inset give each control a solid backing (--svs-feature-backing),
-// and Inset (the svs-inset attribute) makes the buttons keys that press in.
+// Flat and Console give each control a solid backing (--svs-feature-backing),
+// and Console (the svs-console attribute) makes the buttons keys that press in.
 // ---------------------------------------------------------------------------
 const KEY_CSS = `
-  :host([svs-inset]) button {
+  :host([svs-console]) button {
     background-image: linear-gradient(180deg, rgba(255,255,255,.35), rgba(255,255,255,0) 45%, rgba(0,0,0,.18));
     box-shadow: inset 0 1px 0 rgba(255,255,255,.55), inset 0 -2px 2px rgba(0,0,0,.3), 0 2px 3px rgba(0,0,0,.5);
     transition: transform 120ms ease-in-out, box-shadow 120ms ease-in-out;
   }
-  :host([svs-inset]) button:active,
-  :host([svs-inset]) button[aria-pressed="true"] {
+  :host([svs-console]) button:active,
+  :host([svs-console]) button[aria-pressed="true"] {
     transform: translateY(1px) scale(.96);
     background-image: linear-gradient(180deg, rgba(0,0,0,.22), rgba(0,0,0,0) 55%, rgba(255,255,255,.08));
     box-shadow: inset 0 2px 4px rgba(0,0,0,.55), inset 0 -1px 0 rgba(255,255,255,.2);
@@ -204,11 +204,11 @@ const BUTTON_ROW_CSS = `
   button[aria-pressed="true"] { color: var(--svs-on-color, #fff); }
   button:focus-visible { outline: 2px solid var(--c, var(--feature-color)); outline-offset: 2px; }
   button > * { position: relative; }
-  /* Inset: a selected key keeps the color of the others and only looks
+  /* Console: a selected key keeps the color of the others and only looks
      pressed in (a filled color would cover its 3D shading) */
-  :host([svs-inset]) button[aria-pressed="true"]::before { opacity: .2; }
-  :host([svs-inset]) button[aria-pressed="true"]:hover::before { opacity: .35; }
-  :host([svs-inset]) button[aria-pressed="true"] { color: var(--svs-text, var(--primary-text-color)); }
+  :host([svs-console]) button[aria-pressed="true"]::before { opacity: .2; }
+  :host([svs-console]) button[aria-pressed="true"]:hover::before { opacity: .35; }
+  :host([svs-console]) button[aria-pressed="true"] { color: var(--svs-text, var(--primary-text-color)); }
   ha-icon { --mdc-icon-size: 22px; }
   span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   ${KEY_CSS}
@@ -500,14 +500,14 @@ class SvsVolume extends HTMLElement {
         .fill { position: absolute; inset: 0 auto 0 0; background: var(--fill, var(--feature-color)); }
         .tick { position: absolute; top: 25%; bottom: 25%; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--primary-text-color); opacity: .35; }
         .handle { position: absolute; top: 25%; bottom: 25%; width: 4px; margin-left: -10px; border-radius: 2px; background: #fff; box-shadow: 0 0 2px rgba(0, 0, 0, .45); }
-        /* Inset: no bar, so the whole range stays visible. A round loupe in a
+        /* Console: no bar, so the whole range stays visible. A round loupe in a
            beveled bezel of the subwoofer's finish (--svs-bezel, set by the
            card) magnifies the color the volume is set at, as on The Lampster
            card's color temperature slider. */
         .loupe { display: none; }
-        :host([svs-inset]) .fill, :host([svs-inset]) .handle { display: none; }
-        :host([svs-inset]) .zones i { opacity: 1; }
-        :host([svs-inset]) .loupe {
+        :host([svs-console]) .fill, :host([svs-console]) .handle { display: none; }
+        :host([svs-console]) .zones i { opacity: 1; }
+        :host([svs-console]) .loupe {
           --size: calc(var(--feature-height, 42px) - 4px);
           --bezel: var(--svs-bezel, var(--card-background-color, #c3c8cc));
           display: block; position: absolute; top: 50%; width: var(--size); height: var(--size);
@@ -519,7 +519,7 @@ class SvsVolume extends HTMLElement {
             color-mix(in srgb, var(--bezel), #fff 45%) 85%, var(--bezel));
           box-shadow: 0 0 3px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.6), inset 0 -1px 0 rgba(0,0,0,.35);
         }
-        :host([svs-inset]) .loupe::after {
+        :host([svs-console]) .loupe::after {
           content: ""; position: absolute; inset: 4px; border-radius: 50%;
           background:
             radial-gradient(70% 55% at 32% 25%, rgba(255,255,255,.75), rgba(255,255,255,0) 60%),
@@ -1202,7 +1202,7 @@ const BT_OFF = "M13 5.83l1.88 1.88-1.6 1.6 1.41 1.41 3.02-3.02L12 2h-1v5.03l2 2z
 const PANEL_KEYS = ["members", "members_open", "members_toggle"];
 const OWN_KEYS = ["finish", "pattern", "vibration", "bluetooth", "standby_badge", "driver_ring", "finish_extent", "features_style", "_embedded", "_member_entities", ...PANEL_KEYS];
 // The same keys and values as The Lampster card
-const FEATURES_STYLES = [["match", "Match style"], ["flat", "Flat"], ["inset", "Inset"]];
+const FEATURES_STYLES = [["match", "Match style"], ["flat", "Flat"], ["console", "Console"]];
 // The finish's base color, without grain or reflections, for Flat
 const FLAT = { black_ash: "#1a1a1d", black_oak: "#161617", gloss_black: "#101113", gloss_white: "#e7e9ed", fabric: "#1f1f21", grille: "#1d1e20" };
 const BLUETOOTH = [
@@ -1222,7 +1222,7 @@ function tileConfig(config) {
 }
 
 /**
- * Inset styling for Home Assistant's own toggle feature: a slide with a
+ * Console styling for Home Assistant's own toggle feature: a slide with a
  * beveled tab. This styles parts inside Home Assistant's controls; if an
  * update renames them, they keep their usual look.
  */
@@ -1332,7 +1332,7 @@ class SvsCard extends HTMLElement {
           --svs-text: rgba(0, 0, 0, .85); --svs-tip-background: #f6f7f9;
           --svs-feature-scrim: rgba(255, 255, 255, .45);
         }
-        /* Flat and Inset: no finish shows through a control */
+        /* Flat and Console: no finish shows through a control */
         .tile.dark.solid { --svs-feature-backing: ${BACKING.dark}; }
         .tile.light.solid { --svs-feature-backing: ${BACKING.light}; }
         /* With the finish on the expander card, this card is see-through */
@@ -1347,7 +1347,7 @@ class SvsCard extends HTMLElement {
         #areas { position: absolute; inset: 0; pointer-events: none; }
         .area { position: absolute; box-sizing: border-box; }
         .area.flat { background: var(--flat); box-shadow: 0 0 3px 1px var(--flat); }
-        .area.inset {
+        .area.console {
           background: linear-gradient(180deg, rgba(0, 0, 0, .22), rgba(0, 0, 0, .08));
           box-shadow:
             inset 0 2px 3px rgba(0, 0, 0, .55), inset 0 1px 1px rgba(0, 0, 0, .4),
@@ -1791,16 +1791,16 @@ class SvsCard extends HTMLElement {
     return areas;
   }
 
-  // Inset: the preset and standby buttons become keys, and Home Assistant's
+  // Console: the preset and standby buttons become keys, and Home Assistant's
   // toggle a slide
-  _styleControls(inset) {
+  _styleControls(keys) {
     const root = this._tile?.shadowRoot;
     if (!root) return;
     try {
       for (const el of findAllDeep(root, "svs-subwoofer-presets, svs-subwoofer-volume, svs-subwoofer-standby")) {
-        el.toggleAttribute("svs-inset", inset);
+        el.toggleAttribute("svs-console", keys);
       }
-      for (const el of findAllDeep(root, "ha-control-switch")) styleHaControl(el, "svs-slide", inset);
+      for (const el of findAllDeep(root, "ha-control-switch")) styleHaControl(el, "svs-slide", keys);
     } catch (err) {
       console.warn("SVS Subwoofer card: could not style the controls", err);
     }
@@ -1821,13 +1821,13 @@ class SvsCard extends HTMLElement {
 
   _drawAreas() {
     const style = finishTone(this._config?.finish) ? this._config.features_style ?? "match" : "match";
-    this._styleControls(style === "inset");
+    this._styleControls(style === "console");
     if (style === "match") {
       this._areas.replaceChildren();
       this._areasKey = undefined;
       return;
     }
-    const pad = style === "inset" ? 3 : 2;
+    const pad = style === "console" ? 3 : 2;
     const areas = this._featureAreas().map((b) => ({
       x: b.x - pad, y: b.y - pad, w: b.w + 2 * pad, h: b.h + 2 * pad,
       radius: Math.min(b.radius + pad, (b.h + 2 * pad) / 2),
@@ -2339,7 +2339,7 @@ class SvsCardEditor extends HTMLElement {
         selector: { select: { mode: "dropdown", options: FINISH_EXTENTS.map(([value, label]) => ({ value, label })) } },
       }, {
         name: "features_style", label: "Features style",
-        helper: "Match style: the finish shows through the feature controls. Flat: similar to match but without grain or reflections. Inset: 3D machine appearance.",
+        helper: "Match style: the finish shows through the feature controls. Flat: similar to match but without grain or reflections. Console: 3D machine appearance.",
         selector: { select: { mode: "dropdown", options: FEATURES_STYLES.map(([value, label]) => ({ value, label })) } },
       }]),
       {
