@@ -77,7 +77,7 @@ Quiet reads a field of the standard Bluetooth Device Information service (the se
 
 If a subwoofer stops responding while Constant or Quiet keeps it connected, automatic reconnects back off to 30 seconds, then 1, 2, and 5 minutes apart, so a stuck subwoofer is not flooded with connections (which can also disturb other devices on the same Bluetooth proxy). A command or the Reconnect button always tries immediately.
 
-Earlier versions had a single **Stay connected** checkbox. That setting is not carried over: after updating, every subwoofer starts at **Periodic**, and you can choose **Constant** (the same behavior as Stay connected) or **Quiet** in the dialog.
+Earlier versions had a single **Stay connected** checkbox. A subwoofer that had it on uses **Constant** (the same behavior) after updating, and the others use **Periodic**. You can choose another mode, such as **Quiet**, in the dialog.
 
 ### Finding Your Subwoofer
 

@@ -68,11 +68,21 @@ CONF_DISCONNECT_AFTER: Final = "disconnect_after"
 DEFAULT_DISCONNECT_AFTER: Final = 60
 
 
+# The single Stay connected option of earlier versions
+CONF_KEEP_ALIVE: Final = "keep_alive"
+
+
 def get_connection_mode(options: Mapping[str, Any]) -> str:
-    """Return the chosen connection mode, or the default if none is set."""
+    """Return the chosen connection mode, or the default if none is set.
+
+    An entry set up before the connection modes keeps what it had: Stay
+    connected is now Constant.
+    """
     mode = options.get(CONF_CONNECTION_MODE)
     if mode in CONNECTION_MODES:
         return mode
+    if options.get(CONF_KEEP_ALIVE):
+        return CONNECTION_CONSTANT
     return CONNECTION_PERIODIC
 
 
