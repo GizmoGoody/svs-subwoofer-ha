@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
@@ -91,15 +92,6 @@ async def test_constant_and_quiet_keep_the_timing_values(hass: HomeAssistant) ->
         await hass.config_entries.async_remove(entry.entry_id)
 
 
-async def test_old_keep_alive_is_not_carried_over(hass: HomeAssistant) -> None:
-    """An entry with only the old keep_alive flag starts at Periodic."""
-    entry = _entry(hass, {"keep_alive": True})
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    schema = result["data_schema"].schema
-    default = next(key for key in schema if key == "connection_mode").default()
-    assert default == "periodic"
-
-
 def test_dialog_text() -> None:
     """Both steps share the title, and each mode carries its description."""
     for name in ("strings.json", "translations/en.json"):
@@ -160,3 +152,158 @@ async def test_quiet_checks_without_settings_requests(
     assert sub.frame_types().count("f11f") == reads_at_setup
     assert len(sub.info_reads) >= 3
     assert sub.connects == 1
+
+
+@requires("keep_alive_migration")
+async def test_old_keep_alive_becomes_constant(
+    hass: HomeAssistant, sub: FakeSubwoofer, setup_entry: SetupEntry
+) -> None:
+    """An entry with only the old keep_alive flag stays connected, as Constant."""
+    entry = _entry(hass, {"keep_alive": True})
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    schema = result["data_schema"].schema
+    default = next(key for key in schema if key == "connection_mode").default()
+    assert default == "constant"
+    await hass.config_entries.options.async_abort(result["flow_id"])
+    await hass.config_entries.async_remove(entry.entry_id)
+
+    # And it runs as Constant: connected, checked with settings requests
+    with (
+        patch.object(coordinator_module, "KEEP_ALIVE_INTERVAL", 0.1),
+        patch.object(coordinator_module, "LIVENESS_STALE_AFTER", 0),
+    ):
+        await setup_entry({"keep_alive": True})
+        reads_at_setup = sub.frame_types().count("f11f")
+        await settle(0.6)
+    assert sub.frame_types().count("f11f") > reads_at_setup
+    assert sub.connects == 1
+
+
+@requires("timing_defaults")
+async def test_emptied_timing_fields_use_the_defaults(hass: HomeAssistant) -> None:
+    """A field emptied on submit takes its default, not the value stored before."""
+    entry = _entry(
+        hass,
+        {
+            "connection_mode": "periodic",
+            "reconnect_interval": 300,
+            "disconnect_after": 120,
+        },
+    )
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"connection_mode": "periodic"}
+    )
+    # The stored values are shown as suggestions
+    suggested = {
+        str(key): key.description["suggested_value"]
+        for key in result["data_schema"].schema
+    }
+    assert suggested == {"reconnect_interval": 300, "disconnect_after": 120}
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options == {
+        "connection_mode": "periodic",
+        "reconnect_interval": 0,
+        "disconnect_after": 60,
+    }
+
+
+@requires("refresh_validation")
+async def test_refresh_must_be_longer_than_the_hang_on_time(
+    hass: HomeAssistant,
+) -> None:
+    """A refresh no longer than the hang-on time is refused; 0 is allowed."""
+    entry = _entry(hass)
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"connection_mode": "periodic"}
+    )
+    for interval in (30, 120):
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"reconnect_interval": interval, "disconnect_after": 120}
+        )
+        assert result["type"] is FlowResultType.FORM
+        assert result["errors"] == {"reconnect_interval": "refresh_within_hang_on"}
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"reconnect_interval": 0, "disconnect_after": 120}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    for name in ("strings.json", "translations/en.json"):
+        strings = json.loads((STRINGS / name).read_text(encoding="utf-8"))
+        assert strings["options"]["error"]["refresh_within_hang_on"]
+
+
+@requires("periodic_backoff")
+async def test_periodic_refresh_backs_off_a_sub_that_does_not_answer(
+    hass: HomeAssistant, sub: FakeSubwoofer, setup_entry: SetupEntry
+) -> None:
+    """A refresh whose connection the sub never answers counts as silence.
+
+    Without that, the refresh reconnected every interval indefinitely.
+    """
+    with (
+        patch.object(coordinator_module, "PROBE_TIMEOUT", 0.1),
+        patch.object(coordinator_module, "RECONNECT_BACKOFF", (30.0,)),
+    ):
+        await setup_entry(
+            {
+                "connection_mode": "periodic",
+                "reconnect_interval": 0.2,
+                "disconnect_after": 0.1,
+            }
+        )
+        sub.silent = True
+        await settle(0.3)
+        connects = sub.connects
+        await settle(2.0)
+    # At most the immediate retry after the first silence, then the backoff
+    assert sub.connects - connects <= 2
+
+
+@requires("shutdown_waits")
+async def test_unloading_mid_connection_leaves_no_connection_open(
+    hass: HomeAssistant, sub: FakeSubwoofer, setup_entry: SetupEntry
+) -> None:
+    """A loop stopped while it connects does not leave the link open."""
+    entry = await setup_entry(
+        {
+            "connection_mode": "periodic",
+            "reconnect_interval": 0.3,
+            "disconnect_after": 0.1,
+        }
+    )
+    await settle(0.2)
+    assert not sub.client.is_connected
+    # The next refresh opens the link and is still setting it up when the
+    # entry unloads
+    sub.connect_delay = 1.0
+    connects = sub.connects
+    await settle(0.5)
+    assert sub.connects == connects + 1
+    await hass.config_entries.async_unload(entry.entry_id)
+    await settle(1.5)
+    assert not sub.client.is_connected
+
+
+@requires("quiet_warn_once")
+async def test_missing_quiet_field_is_warned_about_once(
+    hass: HomeAssistant,
+    sub: FakeSubwoofer,
+    setup_entry: SetupEntry,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The warning is logged once, not at every connection."""
+    sub.device_info = {}
+    with patch.object(coordinator_module, "KEEP_ALIVE_INTERVAL", 0.1):
+        entry = await setup_entry({"connection_mode": "quiet"})
+        await settle(0.4)
+        await entry.runtime_data.async_reconnect()
+        await settle(0.4)
+    warnings = [
+        record
+        for record in caplog.records
+        if "offers no standard readable field" in record.getMessage()
+    ]
+    assert len(warnings) >= 2
+    assert [record.levelname for record in warnings].count("WARNING") == 1

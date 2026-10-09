@@ -87,6 +87,19 @@ FEATURES: dict[str, Callable[[], bool]] = {
     ),
     # dev only (connection options)
     "connection_modes": lambda: _has("const", "CONF_CONNECTION_MODE"),
+    # Review fixes to the connection modes (PR 14)
+    "keep_alive_migration": lambda: (
+        _has("const", "CONF_CONNECTION_MODE") and _has("const", "CONF_KEEP_ALIVE")
+    ),
+    "periodic_backoff": lambda: _source_contains(
+        "coordinator", "_async_wait_responsive"
+    ),
+    "refresh_validation": lambda: _source_contains(
+        "config_flow", "refresh_within_hang_on"
+    ),
+    "timing_defaults": lambda: _source_contains("config_flow", "suggested_value"),
+    "shutdown_waits": lambda: _has("coordinator", "SHUTDOWN_WAIT"),
+    "quiet_warn_once": lambda: _source_contains("coordinator", "_quiet_char_warned"),
     "quiet_field_selection": lambda: _has("const", "QUIET_KEEP_ALIVE_CHAR_UUIDS"),
 }
 

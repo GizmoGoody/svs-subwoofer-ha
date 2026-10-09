@@ -138,6 +138,8 @@ class FakeSubwoofer:
     - ignore_loads=N ignores the next N preset loads, as if they were lost
     - lose_names={slot: N} loses the next N name replies for a preset slot
     - refuse_connects=N refuses the next N connections, as if out of range
+    - connect_delay=S keeps a connection being set up for S seconds after the
+      link is open (as discovering its services does)
     - fail_loads=N fails the next N preset load writes, as a lost link would
     - late_replies=S delivers a read's reply after its first fragment S seconds
       late, as a slow link does (the probe before a command can then still be
@@ -162,6 +164,7 @@ class FakeSubwoofer:
         self.ignore_loads = 0
         self.lose_names: dict[int, int] = {}
         self.refuse_connects = 0
+        self.connect_delay = 0.0
         self.fail_loads = 0
         self.late_replies = 0.0
         self.client: FakeBleakClient | None = None
@@ -365,6 +368,8 @@ async def setup_entry(
             raise BleakError("The fake subwoofer refused the connection")
         fake.connects += 1
         fake.client = FakeBleakClient(fake, disconnected_callback)
+        if fake.connect_delay:
+            await asyncio.sleep(fake.connect_delay)
         return fake.client
 
     with (
