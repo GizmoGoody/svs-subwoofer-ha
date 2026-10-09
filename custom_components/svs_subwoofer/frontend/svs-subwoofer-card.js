@@ -506,7 +506,7 @@ class SvsVolume extends HTMLElement {
            card's color temperature slider. */
         .loupe { display: none; }
         :host([svs-inset]) .fill, :host([svs-inset]) .handle { display: none; }
-        :host([svs-inset]) .zones i { opacity: .5; }
+        :host([svs-inset]) .zones i { opacity: 1; }
         :host([svs-inset]) .loupe {
           --size: calc(var(--feature-height, 42px) - 4px);
           --bezel: var(--svs-bezel, var(--card-background-color, #c3c8cc));
