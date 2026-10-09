@@ -823,11 +823,17 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 await self._async_wait_quiet()
                 # Hold off preset evaluation until the new settings are recorded
                 self._loading_preset = True
+                # Show the preset as active at once; the sub follows with its
+                # actual values. What was shown before is kept to come back to
+                # if the load fails.
+                previous = (
+                    self.data.get("ACTIVE_PRESET"),
+                    self._manual_settings,
+                    self._manual_pending,
+                )
                 self._manual_pending = False
-                # Track which preset is active and publish immediately; the
-                # sub follows with the preset's actual values.
                 self.data["ACTIVE_PRESET"] = preset_number
-                self._set_manual_settings(None)
+                self._manual_settings = None
                 self.async_set_updated_data(self.data)
 
                 # The sub always sends its new settings right after a load, so
@@ -850,9 +856,15 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
                 if loaded:
                     self._record_preset(preset_number)
+                    # Manual ends only now that the load is confirmed
+                    if previous[1] is not None:
+                        self._save_preset_records()
                 else:
                     # Show what the sub really has, and record nothing: these
-                    # are not the preset's settings
+                    # are not the preset's settings. Manual stays if the sub
+                    # still has its Manual settings.
+                    self._manual_settings = previous[1]
+                    self._manual_pending = previous[2]
                     await self._async_read_settings()
                 # Give the sub a moment to finish applying the preset before
                 # the next command reaches it
@@ -877,6 +889,12 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return True
             except BleakError as err:
                 _LOGGER.error("Failed to load preset: %s", err)
+                # The load did not happen: show what was shown before
+                (
+                    self.data["ACTIVE_PRESET"],
+                    self._manual_settings,
+                    self._manual_pending,
+                ) = previous
                 await self._async_drop_connection()
                 return False
             finally:
