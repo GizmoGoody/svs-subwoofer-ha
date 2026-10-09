@@ -506,7 +506,7 @@ class SvsVolume extends HTMLElement {
            card's color temperature slider. */
         .loupe { display: none; }
         :host([svs-inset]) .fill, :host([svs-inset]) .handle { display: none; }
-        :host([svs-inset]) .zones i { opacity: .5; }
+        :host([svs-inset]) .zones i { opacity: 1; }
         :host([svs-inset]) .loupe {
           --size: calc(var(--feature-height, 42px) - 4px);
           --bezel: var(--svs-bezel, var(--card-background-color, #c3c8cc));
@@ -726,13 +726,14 @@ class SvsVolume extends HTMLElement {
 }
 
 /**
- * The volume feature of a panel row whose settings are being opened, with the
- * main subwoofer's volume settings to copy. Home Assistant's editor dialog
- * opens a feature's settings itself (not inside the row's editor), so the
- * panel editor notes here which feature it is, and the volume settings
- * editor opened for that feature offers the copy.
+ * The panel's volume feature whose settings are being opened: a row's, which
+ * can copy the main subwoofer's (volume), or the main subwoofer's, which can
+ * be copied to every row (copyTo). Home Assistant's editor dialog opens a
+ * feature's settings itself (not inside the panel's editor), so the panel
+ * editor notes here which feature it is, and the volume settings editor
+ * opened for that feature offers the copy.
  */
-let rowVolume = null;
+let panelVolume = null;
 
 class SvsVolumeEditor extends HTMLElement {
   set hass(hass) {
@@ -745,7 +746,7 @@ class SvsVolumeEditor extends HTMLElement {
     // already show it (an emptied field included), so they are left alone
     const echo = this._config && JSON.stringify(config) === JSON.stringify(this._config);
     // Opened for a panel row's volume feature: it can copy the main subwoofer's
-    if (this._row === undefined) this._row = rowVolume?.key === JSON.stringify(config) ? rowVolume : null;
+    if (this._panel === undefined) this._panel = panelVolume?.key === JSON.stringify(config) ? panelVolume : null;
     this._config = config;
     if (!echo || !this._form) this._render();
   }
@@ -761,8 +762,7 @@ class SvsVolumeEditor extends HTMLElement {
       this._note.className = "note";
       this._note.setAttribute("role", "status");
       this._copy = document.createElement("ha-button");
-      this._copy.textContent = "Copy from main";
-      this._copy.addEventListener("click", () => this._copyMain());
+      this._copy.addEventListener("click", () => this._copyClicked());
       this.append(this._copy, this._form, this._note);
     }
     this._renderCopy();
@@ -806,14 +806,24 @@ class SvsVolumeEditor extends HTMLElement {
       : { ...range, colored: false };
   }
 
-  // Shown only for a panel row's volume, when the main subwoofer has one
+  // Copy from main: on a panel row's volume, when the main subwoofer has one.
+  // Copy to members: on the main subwoofer's volume, when the panel has rows.
   _renderCopy() {
-    this._copy.style.display = this._row?.volume() ? "" : "none";
+    const toMembers = !!this._panel?.copyTo && this._panel.members() > 0;
+    const fromMain = !!this._panel?.volume?.();
+    this._copy.textContent = toMembers ? "Copy to members" : "Copy from main";
+    this._copy.style.display = toMembers || fromMain ? "" : "none";
   }
 
-  // The main subwoofer's range and thresholds replace this row's
-  _copyMain() {
-    const volume = this._row?.volume();
+  _copyClicked() {
+    // The main subwoofer's range and thresholds go to every row
+    if (this._panel?.copyTo) {
+      this._panel.copyTo(JSON.parse(JSON.stringify(this._config)));
+      this._note.textContent = "Copied to every subwoofer in the collapsible section.";
+      return;
+    }
+    // The main subwoofer's range and thresholds replace this row's
+    const volume = this._panel?.volume?.();
     if (!volume) return;
     this._config = { ...JSON.parse(JSON.stringify(volume)), type: this._config.type };
     this._note.textContent = "";
@@ -2255,6 +2265,18 @@ class SvsCardEditor extends HTMLElement {
     });
   }
 
+  /**
+   * In the panel editor the card's editor is split in two sections: "style"
+   * shows only the SVS style options (without their own heading), "tile"
+   * only the tile card's options. Unset, both show.
+   */
+  set part(part) {
+    this._part = part;
+    const panel = this.shadowRoot.querySelector("ha-expansion-panel");
+    if (part === "style" && panel) panel.replaceWith(panel.querySelector(".content"));
+    if (part === "tile" && panel) panel.style.display = "none";
+  }
+
   set hass(hass) {
     this._hass = hass;
     this._finishForm.hass = hass;
@@ -2275,6 +2297,7 @@ class SvsCardEditor extends HTMLElement {
   }
 
   async _setTileEditorConfig() {
+    if (this._part === "style") return;
     if (!this._tileEditor) {
       this._loading ??= (async () => {
         const helpers = await window.loadCardHelpers();
@@ -2392,6 +2415,7 @@ class SvsPanelCardEditor extends HTMLElement {
         h3 { margin: 24px 0 4px; font-size: var(--ha-font-size-l, 16px); font-weight: 500; }
         .hint { margin: 0 0 8px; color: var(--secondary-text-color); font-size: var(--ha-font-size-s, 12px); }
         ha-expansion-panel .hint { margin: 8px 0 0; }
+        ha-expansion-panel + ha-expansion-panel { margin-top: 8px; }
         .toolbar { display: flex; align-items: center; gap: 4px; border-bottom: 1px solid var(--divider-color); margin-bottom: 16px; }
         .tabs { display: flex; flex: 1; gap: 4px; overflow-x: auto; }
         .tab {
@@ -2404,6 +2428,9 @@ class SvsPanelCardEditor extends HTMLElement {
         .row-options .buttons { display: flex; gap: 4px; }
         ha-form { display: block; margin-top: 24px; }
       </style>
+      <ha-expansion-panel outlined header="Card">
+        <div id="style"></div>
+      </ha-expansion-panel>
       <ha-expansion-panel outlined header="Main subwoofer">
         <p class="hint">Recommended: a subwoofer group, so the card controls all of its subwoofers together.</p>
         <div id="card"></div>
@@ -2417,6 +2444,7 @@ class SvsPanelCardEditor extends HTMLElement {
       </div>
       <div id="body"></div>`;
     this._cardSlot = this.shadowRoot.getElementById("card");
+    this._styleSlot = this.shadowRoot.getElementById("style");
     this._rowsSlot = this.shadowRoot.getElementById("rows");
     this._tabs = this.shadowRoot.querySelector(".tabs");
     this._body = this.shadowRoot.getElementById("body");
@@ -2430,6 +2458,7 @@ class SvsPanelCardEditor extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     if (this._cardEditor) this._cardEditor.hass = hass;
+    if (this._styleEditor) this._styleEditor.hass = hass;
     if (this._rowsForm) this._rowsForm.hass = hass;
     if (this._addForm) this._addForm.hass = hass;
     if (this._memberEditor) this._memberEditor.hass = withSubwooferAttributes(hass, this._member?.entity);
@@ -2490,23 +2519,37 @@ class SvsPanelCardEditor extends HTMLElement {
     else this._showMember(this._selected);
   }
 
-  // The main subwoofer, in a collapsed section above the tabs: the SVS
-  // Subwoofer card's editor. Below it, how the collapsible section opens.
+  // Above the tabs, two collapsed sections with the SVS Subwoofer card's
+  // editor split in two: the Card (its SVS style options) and the Main
+  // subwoofer (the tile card's options). Below them, how the collapsible
+  // section opens.
   _showCard() {
     if (!this._cardEditor) {
+      this._styleEditor = document.createElement(EDITOR_TYPE);
+      this._styleEditor.part = "style";
       this._cardEditor = document.createElement(EDITOR_TYPE);
-      // The main subwoofer's own features never offer a copy from the main
-      this._cardEditor.addEventListener("edit-sub-element", () => {
-        rowVolume = null;
+      this._cardEditor.part = "tile";
+      // The main subwoofer's volume settings can be copied to every row
+      this._cardEditor.addEventListener("edit-sub-element", (ev) => {
+        const feature = ev.detail?.config;
+        panelVolume = feature?.type === "custom:svs-subwoofer-volume" ? {
+          key: JSON.stringify(feature),
+          members: () => this._members.length,
+          copyTo: (volume) => this._copyVolumeToMembers(volume),
+        } : null;
       });
-      this._cardEditor.addEventListener("config-changed", (ev) => {
-        ev.stopPropagation();
-        const keep = Object.fromEntries(PANEL_KEYS.filter((k) => k in this._config).map((k) => [k, this._config[k]]));
-        this._fire({ ...ev.detail.config, ...keep, type: this._config.type });
-        // Editors update their fields only when handed their configuration
-        // back (Home Assistant does this for a card's own editor)
-        this._cardEditor.setConfig(ev.detail.config);
-      });
+      for (const editor of [this._styleEditor, this._cardEditor]) {
+        editor.addEventListener("config-changed", (ev) => {
+          ev.stopPropagation();
+          const keep = Object.fromEntries(PANEL_KEYS.filter((k) => k in this._config).map((k) => [k, this._config[k]]));
+          this._fire({ ...ev.detail.config, ...keep, type: this._config.type });
+          // Editors update their fields only when handed their configuration
+          // back (Home Assistant does this for a card's own editor); both
+          // halves show the same card
+          this._styleEditor.setConfig(ev.detail.config);
+          this._cardEditor.setConfig(ev.detail.config);
+        });
+      }
       this._rowsForm = document.createElement("ha-form");
       this._rowsForm.computeLabel = (s) => s.label;
       this._rowsForm.computeHelper = (s) => s.helper;
@@ -2516,15 +2559,32 @@ class SvsPanelCardEditor extends HTMLElement {
         this._fire({ ...this._config, members_toggle: v.members_toggle !== false, members_open: v.members_open !== false });
         this._renderRowsForm();
       });
+      this._styleSlot.replaceChildren(this._styleEditor);
       this._cardSlot.replaceChildren(this._cardEditor);
       this._rowsSlot.replaceChildren(this._rowsForm);
     }
     const card = { ...this._config };
     for (const key of PANEL_KEYS) delete card[key];
-    this._cardEditor.hass = this._hass;
-    if (this._lovelace) this._cardEditor.lovelace = this._lovelace;
-    this._cardEditor.setConfig(card);
+    for (const editor of [this._styleEditor, this._cardEditor]) {
+      editor.hass = this._hass;
+      if (this._lovelace) editor.lovelace = this._lovelace;
+      editor.setConfig(card);
+    }
     this._renderRowsForm();
+  }
+
+  // The main subwoofer's volume settings on every row: each row's volume
+  // feature is replaced (or added)
+  _copyVolumeToMembers(volume) {
+    const members = this._members.map((member) => {
+      const features = [...(member.features ?? [])];
+      const at = features.findIndex((f) => f.type === "custom:svs-subwoofer-volume");
+      if (at >= 0) features[at] = JSON.parse(JSON.stringify(volume));
+      else features.push(JSON.parse(JSON.stringify(volume)));
+      return { ...member, features };
+    });
+    this._fire({ ...this._config, members });
+    this._showBody();
   }
 
   _renderRowsForm() {
@@ -2623,7 +2683,7 @@ class SvsPanelCardEditor extends HTMLElement {
     // This row's volume settings, when opened, offer the main subwoofer's
     editor.addEventListener("edit-sub-element", (ev) => {
       const feature = ev.detail?.config;
-      rowVolume = feature?.type === "custom:svs-subwoofer-volume" ? {
+      panelVolume = feature?.type === "custom:svs-subwoofer-volume" ? {
         key: JSON.stringify(feature),
         volume: () => (this._config.features ?? []).find((f) => f.type === "custom:svs-subwoofer-volume"),
       } : null;
