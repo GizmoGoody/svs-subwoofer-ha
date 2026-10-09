@@ -164,7 +164,7 @@ async def test_old_keep_alive_becomes_constant(
     schema = result["data_schema"].schema
     default = next(key for key in schema if key == "connection_mode").default()
     assert default == "constant"
-    await hass.config_entries.options.async_abort(result["flow_id"])
+    hass.config_entries.options.async_abort(result["flow_id"])
     await hass.config_entries.async_remove(entry.entry_id)
 
     # And it runs as Constant: connected, checked with settings requests
