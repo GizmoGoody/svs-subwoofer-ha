@@ -78,7 +78,7 @@
       },
       "timing": {
         "title": "Bluetooth Connection Options",
-        "description": "These settings control the Periodic connection: when Home Assistant connects on its own, and how long it stays connected after a command.",
+        "description": "These settings control the Periodic connection: when Home Assistant connects on its own, and how long it stays connected after a command. An empty field uses its default.",
         "data": {
           "reconnect_interval": "Refresh interval",
           "disconnect_after": "Connection hang-on time"

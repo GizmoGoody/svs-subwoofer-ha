@@ -549,6 +549,7 @@ class SVSSubwooferOptionsFlow(OptionsFlow):
         """Set the Periodic connection timing."""
         errors: dict[str, str] = {}
         if user_input is not None:
+            # An emptied field uses its default, not the value stored before
             interval = user_input.get(
                 CONF_RECONNECT_INTERVAL, DEFAULT_RECONNECT_INTERVAL
             )
@@ -560,25 +561,35 @@ class SVSSubwooferOptionsFlow(OptionsFlow):
                 errors[CONF_RECONNECT_INTERVAL] = "refresh_within_hang_on"
             else:
                 return self.async_create_entry(
-                    data={CONF_CONNECTION_MODE: CONNECTION_PERIODIC, **user_input}
+                    data={
+                        CONF_CONNECTION_MODE: CONNECTION_PERIODIC,
+                        CONF_RECONNECT_INTERVAL: interval,
+                        CONF_DISCONNECT_AFTER: hang_on,
+                    }
                 )
 
-        options = self.config_entry.options
+        # The fields start with the stored values (or what was just entered)
+        # as suggestions, so that a field emptied on submit is left out
+        shown = self.config_entry.options if user_input is None else user_input
         return self.async_show_form(
             step_id="timing",
             data_schema=vol.Schema(
                 {
                     vol.Optional(
                         CONF_RECONNECT_INTERVAL,
-                        default=options.get(
-                            CONF_RECONNECT_INTERVAL, DEFAULT_RECONNECT_INTERVAL
-                        ),
+                        description={
+                            "suggested_value": shown.get(
+                                CONF_RECONNECT_INTERVAL, DEFAULT_RECONNECT_INTERVAL
+                            )
+                        },
                     ): _duration_selector(0, 3600, 10),
                     vol.Optional(
                         CONF_DISCONNECT_AFTER,
-                        default=options.get(
-                            CONF_DISCONNECT_AFTER, DEFAULT_DISCONNECT_AFTER
-                        ),
+                        description={
+                            "suggested_value": shown.get(
+                                CONF_DISCONNECT_AFTER, DEFAULT_DISCONNECT_AFTER
+                            )
+                        },
                     ): _duration_selector(10, 600, 10),
                 }
             ),
