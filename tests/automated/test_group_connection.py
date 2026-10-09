@@ -11,7 +11,6 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.svs_subwoofer import subwoofer_group
 from custom_components.svs_subwoofer.const import DOMAIN
 
 from .conftest import ADDRESS, ADDRESS2, NAME2, FakeSubwoofer, SetupEntry, settle
@@ -23,6 +22,9 @@ pytestmark = requires("group_connection")
 @pytest.fixture(autouse=True)
 def quick_retries():
     """Retry without the real waits."""
+    # Imported here: branches without groups do not have the module
+    from custom_components.svs_subwoofer import subwoofer_group
+
     with patch.object(subwoofer_group, "GROUP_RETRY_DELAY", 0.01):
         yield
 
