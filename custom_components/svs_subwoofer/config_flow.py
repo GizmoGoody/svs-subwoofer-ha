@@ -161,9 +161,18 @@ class GroupStepsMixin:
         # The fields are named after the subwoofers, so the dialog shows them
         fields = {label: a for a, label in labels.items() if a in members}
         if user_input is not None:
+            shown = set(fields.values())
             self._group[CONF_OFFSETS] = {
-                address: int(user_input.get(field, 0))
-                for field, address in fields.items()
+                # A member without a field here (not set up) keeps its offset
+                **{
+                    address: offset
+                    for address, offset in self._group.get(CONF_OFFSETS, {}).items()
+                    if address in members and address not in shown
+                },
+                **{
+                    address: int(user_input.get(field, 0))
+                    for field, address in fields.items()
+                },
             }
             return await self._async_finish_group()
 

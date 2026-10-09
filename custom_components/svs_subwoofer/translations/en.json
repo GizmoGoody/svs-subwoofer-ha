@@ -245,5 +245,11 @@
         "offset": "Offset – Each subwoofer plays at the group volume plus its own offset."
       }
     }
+  },
+  "issues": {
+    "group_too_few_members": {
+      "title": "{group} has fewer than two subwoofers",
+      "description": "A subwoofer in the group {group} was removed, so the group now has {count}. A group needs at least two subwoofers. Open the group's settings (Configure) to choose its subwoofers, or delete the group."
+    }
   }
 }
