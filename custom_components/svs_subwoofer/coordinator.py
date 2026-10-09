@@ -181,6 +181,9 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._settings_event = asyncio.Event()
         # Suppresses preset evaluation while a preset load is in flight
         self._loading_preset = False
+        # Manual was chosen before every setting was known: the settings first
+        # read after that are the ones that keep the sub in Manual
+        self._manual_pending = False
         # Settings as last changed through HA since the last preset load. While
         # the sub still has these settings it is in Manual, even if they
         # happen to match a preset again.
@@ -291,6 +294,9 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         settings = self._current_preset_settings()
         if settings is None:
             return
+        if self._manual_pending:
+            self._manual_pending = False
+            self._set_manual_settings(settings)
         if self._manual_settings is not None:
             if settings == self._manual_settings:
                 self.data["ACTIVE_PRESET"] = PRESET_MANUAL
@@ -808,6 +814,7 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             try:
                 # Hold off preset evaluation until the new settings are recorded
                 self._loading_preset = True
+                self._manual_pending = False
                 # Track which preset is active and publish immediately; the
                 # sub follows with the preset's actual values.
                 self.data["ACTIVE_PRESET"] = preset_number
@@ -993,6 +1000,8 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         settings = self._current_preset_settings()
         if settings is not None:
             self._set_manual_settings(settings)
+        else:
+            self._manual_pending = True
         self.data["ACTIVE_PRESET"] = PRESET_MANUAL
         self.async_set_updated_data(self.data)
 
