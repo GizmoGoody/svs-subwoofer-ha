@@ -219,6 +219,11 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._names_read: set[str] = set()
         self._names_task: asyncio.Task | None = None
 
+    @property
+    def device_id(self) -> str | None:
+        """Return the subwoofer's device ID in the device registry."""
+        return self._get_device_id()
+
     def _get_device_id(self) -> str | None:
         """Get the device ID from the device registry."""
         if self._device_id:
