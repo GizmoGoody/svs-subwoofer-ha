@@ -181,12 +181,8 @@
       if (!cardAbove) throw new Error("the card's editor is not in the main subwoofer's section");
       if (!(section.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING)) throw new Error("the main subwoofer's section is not before the heading");
 
-      // A subwoofer's tab (the first one is open): its volume settings can
-      // copy the main subwoofer's
+      // State content and features stay as edited (the first tab is open)
       const tile = await tileEditorIn(el);
-      expectEqual(tile.svsMainVolume?.(), { type: "custom:svs-subwoofer-volume", min: -50, max: 0, volume_thresholds: thresholds }, "the main subwoofer's volume offered to the row");
-
-      // State content and features stay as edited
       setFormValue(mainForm(tile), { state_content: ["state", "preset"] });
       await until(() => same(tile._config?.state_content, ["state", "preset"]), "the row's form to show two state contents");
       expectEqual(saved.at(-1).members[0].state_content, ["state", "preset"], "saved row state content");
@@ -285,32 +281,80 @@
       await until(() => !tooltip.classList.contains("visible"), "the callout to hide after the key", 3000);
     });
 
-    await test("volume editor: copies the main subwoofer's volume in a panel row only", async () => {
+    await test("volume editor: Copy from main on a panel row's volume only, never grayed out", async () => {
+      if (!second) throw new Error("two subwoofers are needed");
       const main = { type: "custom:svs-subwoofer-volume", min: -40, volume_thresholds: [{ below: -20, color: "green" }, { color: "red" }] };
-      // Outside a panel row: no copy button
-      const alone = hosted("svs-subwoofer-volume-editor").el;
-      alone.setConfig({ type: "custom:svs-subwoofer-volume" });
-      const aloneCopy = await until(() => alone.querySelector("ha-button"), "the copy button");
-      if (!aloneCopy.hidden) throw new Error("the copy button shows outside a panel row");
-      // In a row (an ancestor offers the main subwoofer's volume)
-      const row = document.createElement("div");
-      row.svsMainVolume = () => main;
-      stage().append(row);
-      const el = document.createElement("svs-subwoofer-volume-editor");
-      el.hass = hass();
-      const saved = [];
-      el.addEventListener("config-changed", (ev) => {
-        saved.push(ev.detail.config);
-        el.setConfig(ev.detail.config);
+      const rowVolume = { type: "custom:svs-subwoofer-volume", max: -5 };
+      const { el: panel } = hosted("svs-subwoofer-panel-card-editor");
+      panel.setConfig({
+        type: "custom:svs-subwoofer-panel-card", entity: first, features: [main],
+        members: [{ entity: second, features: [rowVolume] }],
       });
-      row.append(el);
-      el.setConfig({ type: "custom:svs-subwoofer-volume", max: -5 });
-      const copy = await until(() => !el.querySelector("ha-button")?.hidden && el.querySelector("ha-button"), "the copy button");
-      expectEqual(copy.textContent, "Copy from main", "the copy button's label");
-      copy.click();
-      await until(() => saved.length, "a save");
-      expectEqual(saved.at(-1), main, "the copied settings");
-      await until(() => el.querySelector("ha-form").data.min === -40, "the form to show the copied settings");
+      // Opens a feature's settings the way Home Assistant's features list does;
+      // the dialog then shows the settings editor, made here
+      const open = (tile, index, config) => {
+        featuresEditor(tile).dispatchEvent(new CustomEvent("edit-detail-element", {
+          detail: { subElementConfig: { index, type: "feature", elementConfig: config } }, bubbles: true, composed: true,
+        }));
+        const editor = document.createElement("svs-subwoofer-volume-editor");
+        editor.hass = hass();
+        const saved = [];
+        editor.addEventListener("config-changed", (ev) => {
+          saved.push(ev.detail.config);
+          editor.setConfig(ev.detail.config);
+        });
+        stage().append(editor);
+        editor.setConfig(config);
+        return { editor, saved, button: editor.querySelector("ha-button") };
+      };
+      const shown = (button) => getComputedStyle(button).display !== "none";
+
+      // The row's volume: shown and enabled; it copies the main subwoofer's
+      const rowTile = await tileEditorIn(panel);
+      await until(() => featuresEditor(rowTile), "the row's features list");
+      const row = open(rowTile, 0, rowVolume);
+      if (!shown(row.button)) throw new Error("Copy from main is not shown on the row's volume");
+      if (row.button.disabled) throw new Error("Copy from main is grayed out on the row's volume");
+      expectEqual(row.button.textContent, "Copy from main", "the button's label");
+      row.button.click();
+      expectEqual(row.saved.at(-1), main, "the copied settings");
+      await until(() => row.editor.querySelector("ha-form").data.min === -40, "the form to show the copied settings");
+
+      // The main subwoofer's own volume, even with the same settings: no button
+      const cardEditor = panel.shadowRoot.querySelector("ha-expansion-panel svs-subwoofer-card-editor");
+      const mainTile = await tileEditorIn(cardEditor);
+      await until(() => featuresEditor(mainTile), "the main subwoofer's features list");
+      const own = open(mainTile, 0, main);
+      if (shown(own.button)) throw new Error("Copy from main is shown on the main subwoofer");
+
+      // A volume feature outside the panel: no button
+      const alone = hosted("svs-subwoofer-volume-editor").el;
+      alone.setConfig({ type: "custom:svs-subwoofer-volume", min: -33 });
+      if (shown(await until(() => alone.querySelector("ha-button"), "the editor"))) throw new Error("Copy from main is shown outside the panel");
+    });
+
+    await test("inset: a selected key keeps the others' color and only looks pressed in", async () => {
+      const card = document.createElement("svs-subwoofer-card");
+      card.setConfig({
+        type: "custom:svs-subwoofer-card", entity: first, finish: "fabric", features_style: "inset",
+        features: [{ type: "custom:svs-subwoofer-standby" }, { type: "custom:svs-subwoofer-presets" }],
+      });
+      card.hass = hass();
+      stage().append(card);
+      const standby = await until(() => findDeep(card.shadowRoot, "svs-subwoofer-standby")?.shadowRoot?.querySelector('button[aria-pressed="true"]'), "the selected standby mode");
+      await sleep(400);
+      for (const feature of [findDeep(card.shadowRoot, "svs-subwoofer-standby"), findDeep(card.shadowRoot, "svs-subwoofer-presets")]) {
+        const keys = [...feature.shadowRoot.querySelectorAll("button")];
+        const on = keys.find((b) => b.getAttribute("aria-pressed") === "true");
+        const off = keys.find((b) => b.getAttribute("aria-pressed") !== "true");
+        if (!on || !off) continue;
+        const tint = (b) => Number(getComputedStyle(b, "::before").opacity);
+        if (tint(on) !== tint(off)) throw new Error(`${feature.localName}: the selected key's tint is ${tint(on)}, the others' ${tint(off)}`);
+        if (getComputedStyle(on).color !== getComputedStyle(off).color) throw new Error(`${feature.localName}: the selected key's text color differs`);
+        if (!getComputedStyle(on).boxShadow.includes("inset")) throw new Error(`${feature.localName}: the selected key does not look pressed in`);
+        if (getComputedStyle(on).transform === "none") throw new Error(`${feature.localName}: the selected key is not pressed down`);
+      }
+      if (!standby) throw new Error("no selected standby mode");
     });
 
     await test("presets editor: reordered presets keep their order", async () => {
