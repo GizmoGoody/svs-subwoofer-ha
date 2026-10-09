@@ -62,7 +62,24 @@ Control your SVS subwoofer directly from Home Assistant via Bluetooth. Full para
 
 By default the integration connects when needed, re-reads all settings from the subwoofer on every connect, and disconnects after 60 seconds without commands so the SVS app can connect.
 
-If commands stop working after the subwoofer has been idle, open the integration's **Configure** dialog and enable **Stay connected**. The integration then keeps the connection open, checks it every 30 seconds, and reconnects if the subwoofer stops responding. If the subwoofer still does not respond after that, automatic reconnects back off to 30 seconds, then 1, 2, and 5 minutes apart, so a stuck subwoofer is not flooded with connections (which can also disturb other devices on the same Bluetooth proxy). A command or the Reconnect button always tries immediately. Press the **Disconnect** button when you want to use the SVS app; the integration stays disconnected until the next command or Reconnect.
+| Connection | What it does | Choose it when |
+|------------|--------------|----------------|
+| **Periodic** (default) | Connects when a command is sent and disconnects after a period without commands. Selecting **Submit** opens a second step to set the timing. | You use the SVS app as well, or prefer not to keep the subwoofer connected |
+| **Constant** | Stays connected and asks the subwoofer for its settings every 30 seconds, so a stalled subwoofer or a change made on its rear panel is noticed within 30 seconds. The panel LEDs light briefly at each check. | Commands stop working after the subwoofer has been idle, and the LED flash does not bother you |
+| **Quiet** | Stays connected and checks only the Bluetooth link every 30 seconds, so the panel LEDs stay dark. A stalled subwoofer or a change made on its rear panel is noticed at the next command instead. | You want to stay connected without the LEDs lighting every 30 seconds |
+
+**Periodic timing** (second step, shown only for Periodic):
+
+| Setting | Default | What it does |
+|---------|---------|--------------|
+| **Refresh interval** | 0 seconds | While disconnected, how often Home Assistant briefly connects to refresh the subwoofer's settings, for example after a change made in the SVS app or on the rear panel. Each refresh briefly lights the panel LEDs. 0 connects only when a command is sent. |
+| **Connection hang-on time** | 60 seconds | How long the connection remains active after the last command. A shorter time frees the subwoofer for the SVS app sooner. |
+
+Quiet reads a field of the standard Bluetooth Device Information service (the serial number, model, firmware revision, or manufacturer name, whichever the subwoofer offers first). If a subwoofer offers none of them, Quiet checks with the settings request instead, as Constant does, and logs a warning explaining why the LEDs light.
+
+If a subwoofer stops responding while Constant or Quiet keeps it connected, automatic reconnects back off to 30 seconds, then 1, 2, and 5 minutes apart, so a stuck subwoofer is not flooded with connections (which can also disturb other devices on the same Bluetooth proxy). A command or the Reconnect button always tries immediately.
+
+Earlier versions had a single **Stay connected** checkbox. A subwoofer that had it on uses **Constant** (the same behavior) after updating, and the others use **Periodic**. You can choose another mode, such as **Quiet**, in the dialog.
 
 ### Finding Your Subwoofer
 
