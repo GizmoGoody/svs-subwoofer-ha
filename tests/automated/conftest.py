@@ -444,7 +444,11 @@ async def setup_entry(
         yield _setup
 
         for entry in entries:
-            if entry.state.recoverable:
+            # A test may have removed the entry already
+            if (
+                hass.config_entries.async_get_entry(entry.entry_id)
+                and entry.state.recoverable
+            ):
                 await hass.config_entries.async_unload(entry.entry_id)
         await settle()
 
