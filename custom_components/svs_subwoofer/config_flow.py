@@ -70,6 +70,20 @@ def _subwoofer_entries(hass: HomeAssistant) -> list[ConfigEntry]:
     ]
 
 
+def _same_members_group(
+    hass: HomeAssistant, members: list[str], exclude: str | None = None
+) -> ConfigEntry | None:
+    """Return another group with exactly these members, if there is one."""
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if (
+            entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_GROUP
+            and entry.entry_id != exclude
+            and set(entry.options.get(CONF_MEMBERS, [])) == set(members)
+        ):
+            return entry
+    return None
+
+
 class GroupStepsMixin:
     """The subwoofer group steps, shared by the config and options flows.
 
@@ -243,6 +257,8 @@ class SVSSubwooferConfigFlow(GroupStepsMixin, ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             if len(user_input[CONF_MEMBERS]) < 2:
                 errors[CONF_MEMBERS] = "too_few_members"
+            elif _same_members_group(self.hass, user_input[CONF_MEMBERS]):
+                errors[CONF_MEMBERS] = "duplicate_group"
             else:
                 self._group = {
                     CONF_NAME: user_input[CONF_NAME].strip(),
@@ -632,6 +648,10 @@ class SVSGroupOptionsFlow(GroupStepsMixin, OptionsFlow):
         if user_input is not None:
             if len(user_input[CONF_MEMBERS]) < 2:
                 errors[CONF_MEMBERS] = "too_few_members"
+            elif _same_members_group(
+                self.hass, user_input[CONF_MEMBERS], exclude=self._entry.entry_id
+            ):
+                errors[CONF_MEMBERS] = "duplicate_group"
             else:
                 self._group[CONF_MEMBERS] = user_input[CONF_MEMBERS]
                 self._group[CONF_GROUP_FEATURES] = user_input.get(
