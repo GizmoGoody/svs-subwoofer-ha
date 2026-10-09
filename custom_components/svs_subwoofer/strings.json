@@ -114,6 +114,7 @@
       }
     },
     "error": {
+      "too_few_members": "Choose at least two subwoofers.",
       "refresh_within_hang_on": "The refresh interval must be longer than the connection hang-on time, or 0. A shorter one keeps the subwoofer connected almost all the time and lights its panel LEDs at every refresh.",
       "duplicate_group": "These subwoofers are already a group. Choose different subwoofers, or change the existing group."
     }
