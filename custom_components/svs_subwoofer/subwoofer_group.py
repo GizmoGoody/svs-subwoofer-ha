@@ -30,20 +30,19 @@ from .const import (
     DOMAIN,
     GROUP_FEATURES,
     GROUP_ID_PREFIX,
+    GROUP_STATE_MIXED,
     PRESET_MANUAL,
     PRESET_MANUAL_OPTION,
     SIGNAL_MEMBERS_CHANGED,
     VOLUME_MODE_MATCHED,
     VOLUME_MODE_OFFSET,
 )
+from .helpers import preset_option_names
 
 if TYPE_CHECKING:
     from .coordinator import SVSSubwooferCoordinator
 
 _LOGGER = logging.getLogger(__name__)
-
-# Preset slot 4 is the factory default; the subwoofer does not store a name
-DEFAULT_PRESET_NAME = "Default"
 
 # A member that does not connect or disconnect is tried again, up to this
 # many tries in all, waiting longer before each (seconds per try so far)
@@ -56,22 +55,18 @@ type MemberCommand = Callable[[str, SVSSubwooferCoordinator], Awaitable[bool]]
 
 def preset_names(coordinator: SVSSubwooferCoordinator) -> dict[int, str]:
     """Return a subwoofer's preset names by slot, as its Preset select shows them."""
-    names: dict[int, str] = {}
-    for slot in range(1, 4):
-        name = (coordinator.data.get(f"PRESET{slot}NAME") or "").replace("\x00", "")
-        names[slot] = name.strip() or f"Preset {slot}"
-    names[4] = DEFAULT_PRESET_NAME
-    return names
+    return dict(enumerate(preset_option_names(coordinator.data), start=1))
 
 
-def active_preset_name(coordinator: SVSSubwooferCoordinator) -> str | None:
-    """Return the name of a subwoofer's active preset, Manual, or None if unknown."""
-    active = coordinator.data.get("ACTIVE_PRESET")
-    if active is None:
-        return None
-    if active == PRESET_MANUAL:
-        return PRESET_MANUAL_OPTION
-    return preset_names(coordinator).get(active)
+def unnamed_slots(coordinator: SVSSubwooferCoordinator) -> set[int]:
+    """Return the slots the subwoofer has no name for (shown as "Preset N")."""
+    return {
+        slot
+        for slot in range(1, 4)
+        if not (coordinator.data.get(f"PRESET{slot}NAME") or "")
+        .replace("\x00", "")
+        .strip()
+    }
 
 
 class SVSGroup:
@@ -250,24 +245,32 @@ class SVSGroup:
         """Return the preset names every member has, with each member's slot.
 
         Presets are matched by name, not by slot, ignoring case: LOW in one
-        sub's slot 1 matches LOW in another's slot 3. Names that are missing
-        from any member are left out. Names keep the first member's spelling
-        and order.
+        sub's slot 1 matches LOW in another's slot 3. An unnamed slot (shown
+        as "Preset N") matches only the same unnamed slot on the others, never
+        another preset by chance. Names that are missing from any member are
+        left out. Names keep the first member's spelling and order, as each
+        subwoofer's own Preset select shows them; a name the group itself uses
+        (Mixed) gets its slot added, as Default and Manual do there.
         """
         coordinators = list(self.coordinators().items())
         if not coordinators:
             return {}
         matched: dict[str, dict[str, int]] = {}
         first_address, first = coordinators[0]
+        first_unnamed = unnamed_slots(first)
         for slot, name in preset_names(first).items():
             key = name.casefold()
+            unnamed = slot in first_unnamed
             slots = {first_address: slot}
             for address, coordinator in coordinators[1:]:
+                other_unnamed = unnamed_slots(coordinator)
                 found = next(
                     (
                         other_slot
                         for other_slot, other in preset_names(coordinator).items()
                         if other.casefold() == key
+                        and (other_slot in other_unnamed) == unnamed
+                        and (not unnamed or other_slot == slot)
                     ),
                     None,
                 )
@@ -275,8 +278,31 @@ class SVSGroup:
                     break
                 slots[address] = found
             else:
+                if key == GROUP_STATE_MIXED.casefold():
+                    name = f"{name} (Preset {slot})"
                 matched.setdefault(name, slots)
         return matched
+
+    def active_preset(self) -> str | None:
+        """Return the group's preset: a matched preset, Manual, Mixed, or None.
+
+        None while a member's preset is unknown. Manual when every member is
+        in Manual, the matched preset when every member has its slot of it
+        active, and Mixed otherwise.
+        """
+        coordinators = self.coordinators()
+        active = {
+            address: coordinator.data.get("ACTIVE_PRESET")
+            for address, coordinator in coordinators.items()
+        }
+        if not active or None in active.values():
+            return None
+        if all(value == PRESET_MANUAL for value in active.values()):
+            return PRESET_MANUAL_OPTION
+        for option, slots in self.matched_presets().items():
+            if all(slots.get(address) == value for address, value in active.items()):
+                return option
+        return GROUP_STATE_MIXED
 
 
 class SVSGroupEntity(Entity):
