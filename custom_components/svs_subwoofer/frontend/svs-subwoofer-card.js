@@ -204,6 +204,11 @@ const BUTTON_ROW_CSS = `
   button[aria-pressed="true"] { color: var(--svs-on-color, #fff); }
   button:focus-visible { outline: 2px solid var(--c, var(--feature-color)); outline-offset: 2px; }
   button > * { position: relative; }
+  /* Inset: a selected key keeps the color of the others and only looks
+     pressed in (a filled color would cover its 3D shading) */
+  :host([svs-inset]) button[aria-pressed="true"]::before { opacity: .2; }
+  :host([svs-inset]) button[aria-pressed="true"]:hover::before { opacity: .35; }
+  :host([svs-inset]) button[aria-pressed="true"] { color: var(--svs-text, var(--primary-text-color)); }
   ha-icon { --mdc-icon-size: 22px; }
   span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   ${KEY_CSS}
