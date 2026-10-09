@@ -25,6 +25,7 @@ from .const import (
     STANDBY_MODES,
 )
 from .coordinator import SVSSubwooferCoordinator
+from .helpers import preset_option_names
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -138,20 +139,9 @@ class SVSSelectEntity(CoordinatorEntity[SVSSubwooferCoordinator], SelectEntity):
         if not self.entity_description.is_preset:
             return self._base_options
 
-        # Build preset options with custom names from coordinator data
-        preset_options = []
-        for i in range(1, 4):
-            name_key = f"PRESET{i}NAME"
-            custom_name = self.coordinator.data.get(name_key)
-            if custom_name and custom_name.strip():
-                # Use custom name, strip null bytes and whitespace
-                preset_options.append(custom_name.strip().replace("\x00", ""))
-            else:
-                preset_options.append(f"Preset {i}")
-        preset_options.append("Default")
-        # Shown when the settings no longer match any preset
-        preset_options.append(PRESET_MANUAL_OPTION)
-        return preset_options
+        # The presets' names from coordinator data, then Manual, which is
+        # shown when the settings no longer match any preset
+        return [*preset_option_names(self.coordinator.data), PRESET_MANUAL_OPTION]
 
     @property
     def _preset_value_map(self) -> dict[str, int]:
