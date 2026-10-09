@@ -137,6 +137,12 @@
       },
       "save_preset_3": {
         "name": "Save to Preset 3"
+      },
+      "group_connect": {
+        "name": "Connect"
+      },
+      "group_disconnect": {
+        "name": "Disconnect"
       }
     },
     "number": {
@@ -223,6 +229,9 @@
         "name": "Polarity (Inverted)"
       },
       "connection": {
+        "name": "Connection"
+      },
+      "group_connection": {
         "name": "Connection"
       }
     }

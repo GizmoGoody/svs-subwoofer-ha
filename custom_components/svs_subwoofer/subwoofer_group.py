@@ -8,13 +8,18 @@ members.
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Awaitable, Callable
+import logging
 from typing import TYPE_CHECKING
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from .const import (
     CONF_GROUP_FEATURES,
@@ -34,8 +39,15 @@ from .const import (
 if TYPE_CHECKING:
     from .coordinator import SVSSubwooferCoordinator
 
+_LOGGER = logging.getLogger(__name__)
+
 # Preset slot 4 is the factory default; the subwoofer does not store a name
 DEFAULT_PRESET_NAME = "Default"
+
+# A member that does not connect or disconnect is tried again, up to this
+# many tries in all, waiting longer before each (seconds per try so far)
+GROUP_CONNECTION_ATTEMPTS = 3
+GROUP_RETRY_DELAY = 2.0
 
 
 def preset_names(coordinator: SVSSubwooferCoordinator) -> dict[int, str]:
@@ -102,6 +114,72 @@ class SVSGroup:
             for address in (self.members if addresses is None else addresses)
             if address in loaded
         }
+
+    @property
+    def all_connected(self) -> bool:
+        """Return True if every member is set up and connected."""
+        coordinators = self.coordinators()
+        return len(coordinators) == len(self.members) and all(
+            coordinator.is_connected for coordinator in coordinators.values()
+        )
+
+    async def async_connect(self) -> None:
+        """Connect every member that is not connected, confirming each.
+
+        Raises HomeAssistantError naming the members still not connected.
+        """
+        await self._async_each(self._async_connect_member, "connect to")
+
+    async def async_disconnect(self) -> None:
+        """Disconnect every member until its next command, confirming each.
+
+        Raises HomeAssistantError naming the members still connected.
+        """
+        await self._async_each(self._async_disconnect_member, "disconnect from")
+
+    async def _async_each(
+        self,
+        action: Callable[[SVSSubwooferCoordinator], Awaitable[bool]],
+        verb: str,
+    ) -> None:
+        """Run an action on every member at once; fail naming those it did not do."""
+        coordinators = self.coordinators()
+        missing = [address for address in self.members if address not in coordinators]
+        results = await asyncio.gather(
+            *(action(coordinator) for coordinator in coordinators.values())
+        )
+        failed = [
+            coordinator.device_name
+            for coordinator, done in zip(coordinators.values(), results, strict=True)
+            if not done
+        ] + missing
+        if failed:
+            raise HomeAssistantError(f"Could not {verb} {', '.join(failed)}")
+
+    async def _async_connect_member(self, coordinator: SVSSubwooferCoordinator) -> bool:
+        """Connect one member, trying again if it does not connect."""
+        for attempt in range(GROUP_CONNECTION_ATTEMPTS):
+            if coordinator.is_connected:
+                return True
+            if attempt:
+                await asyncio.sleep(GROUP_RETRY_DELAY * attempt)
+            try:
+                await coordinator.async_reconnect()
+            except UpdateFailed as err:
+                _LOGGER.debug("Connecting to %s failed: %s", coordinator.address, err)
+        return coordinator.is_connected
+
+    async def _async_disconnect_member(
+        self, coordinator: SVSSubwooferCoordinator
+    ) -> bool:
+        """Disconnect one member, trying again if it stays connected."""
+        for attempt in range(GROUP_CONNECTION_ATTEMPTS):
+            if attempt:
+                await asyncio.sleep(GROUP_RETRY_DELAY * attempt)
+            await coordinator.async_disconnect(manual=True)
+            if not coordinator.is_connected:
+                return True
+        return False
 
     def matched_presets(self) -> dict[str, dict[str, int]]:
         """Return the preset names every member has, with each member's slot.
