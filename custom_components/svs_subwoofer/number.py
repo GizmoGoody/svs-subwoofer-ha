@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from dataclasses import dataclass
 
@@ -388,16 +387,18 @@ class SVSGroupVolumeNumber(SVSGroupEntity, RestoreNumber):
             address: group_volume + offset
             for address, offset in self.svs_group.offsets.items()
         }
-        coordinators = self.svs_group.coordinators()
-        results = await asyncio.gather(
-            *(
-                coordinators[address].async_send_command("VOLUME", target)
-                for address, target in targets.items()
-                if address in coordinators
+        try:
+            await self.svs_group.async_command_members(
+                lambda address, coordinator: coordinator.async_send_command(
+                    "VOLUME", targets[address]
+                ),
+                "set the volume on",
             )
-        )
+        except HomeAssistantError:
+            # Not every member changed: the group keeps the volume it had,
+            # and shows what the members report
+            self.async_write_ha_state()
+            raise
         self._group_volume = group_volume
         self._expected = {address: float(t) for address, t in targets.items()}
         self.async_write_ha_state()
-        if not all(results):
-            raise HomeAssistantError("Could not set the volume on every subwoofer")

@@ -8,10 +8,14 @@ members.
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
@@ -34,8 +38,13 @@ from .const import (
 if TYPE_CHECKING:
     from .coordinator import SVSSubwooferCoordinator
 
+_LOGGER = logging.getLogger(__name__)
+
 # Preset slot 4 is the factory default; the subwoofer does not store a name
 DEFAULT_PRESET_NAME = "Default"
+
+# A command a group sends one member: True when it was done
+type MemberCommand = Callable[[str, SVSSubwooferCoordinator], Awaitable[bool]]
 
 
 def preset_names(coordinator: SVSSubwooferCoordinator) -> dict[int, str]:
@@ -102,6 +111,67 @@ class SVSGroup:
             for address in (self.members if addresses is None else addresses)
             if address in loaded
         }
+
+    def member_name(self, address: str) -> str:
+        """Return a member's name, also when it is not set up."""
+        for entry in self.hass.config_entries.async_entries(DOMAIN):
+            if entry.data.get(CONF_ADDRESS) == address:
+                return entry.title
+        return address
+
+    async def async_command_members(
+        self, command: MemberCommand, what: str, retry: bool = True
+    ) -> None:
+        """Run a command on every member, one at a time.
+
+        One at a time, so a Bluetooth setup with few connection slots is not
+        asked for several connections at once. A member whose command fails is
+        sent it once more (unless retry is False, for commands that already
+        retry). When Bluetooth has no free connection slot for a member, the
+        connections this command opened for earlier members are released and
+        it is tried again. Raises HomeAssistantError naming the members it
+        could not reach, such as "set the volume on Left".
+        """
+        coordinators = self.coordinators()
+        failed = [
+            self.member_name(address)
+            for address in self.members
+            if address not in coordinators
+        ]
+        # Members that were not connected before this command, and are now
+        opened: list[SVSSubwooferCoordinator] = []
+        for address, coordinator in coordinators.items():
+            was_connected = coordinator.is_connected
+            done = await self._async_try(command, address, coordinator, opened)
+            if not done and retry:
+                done = await self._async_try(command, address, coordinator, opened)
+            if not done:
+                failed.append(coordinator.device_name)
+            elif not was_connected:
+                opened.append(coordinator)
+        if failed:
+            raise HomeAssistantError(f"Could not {what} {', '.join(failed)}")
+
+    @staticmethod
+    async def _async_try(
+        command: MemberCommand,
+        address: str,
+        coordinator: SVSSubwooferCoordinator,
+        opened: list[SVSSubwooferCoordinator],
+    ) -> bool:
+        """Run the command on one member, freeing a connection slot if needed."""
+        if await command(address, coordinator):
+            return True
+        if not (coordinator.out_of_slots and opened):
+            return False
+        _LOGGER.debug(
+            "No free Bluetooth connection slot for %s; releasing the connections "
+            "this group command opened",
+            coordinator.address,
+        )
+        while opened:
+            await opened.pop().async_disconnect()
+        return await command(address, coordinator)
 
     def matched_presets(self) -> dict[str, dict[str, int]]:
         """Return the preset names every member has, with each member's slot.
