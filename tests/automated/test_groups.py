@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
+import pytest
+import yaml
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers import (
+    device_registry as dr,
+    entity_registry as er,
+    issue_registry as ir,
+)
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.svs_subwoofer import device_trigger
@@ -18,6 +27,7 @@ from .conftest import (
     ADDRESS2,
     NAME,
     NAME2,
+    FakeBluetooth,
     FakeSubwoofer,
     SetupEntry,
     entity_id,
@@ -26,6 +36,8 @@ from .conftest import (
 from .features import has, requires
 
 pytestmark = requires("groups")
+
+STRINGS = Path("custom_components/svs_subwoofer")
 
 ALL_FEATURES = ["preset", "standby", "volume"]
 # The standby mode names, as the branch under test writes them
@@ -334,8 +346,13 @@ async def test_offset_volume(
     assert second_sub.settings["VOLUME"] == -7
     assert float(_state(hass, volume)) == -9
 
-    # Sub 2 would go above 0: nothing changes
-    await _call(hass, "number", volume, value=-1)
+    if has("group_volume_range"):
+        # -1 is past the group's range (-58 to -2 dB): refused, nothing changes
+        with pytest.raises(ServiceValidationError):
+            await _call(hass, "number", volume, value=-1)
+    else:
+        # Sub 2 would go above 0: nothing changes
+        await _call(hass, "number", volume, value=-1)
     assert sub.settings["VOLUME"] == -11
     assert second_sub.settings["VOLUME"] == -7
     assert float(_state(hass, volume)) == -9
@@ -383,3 +400,293 @@ async def test_group_device_has_no_subwoofer_triggers(
     (device,) = dr.async_entries_for_config_entry(registry, entry.entry_id)
     assert (DOMAIN, f"group_{entry.entry_id}") in device.identifiers
     assert await device_trigger.async_get_triggers(hass, device.id) == []
+
+
+# Review fixes (PR 16)
+
+
+async def _setup_entries(
+    setup_entry: SetupEntry,
+) -> tuple[MockConfigEntry, MockConfigEntry]:
+    first = await setup_entry()
+    second = await setup_entry(address=ADDRESS2, name=NAME2)
+    return first, second
+
+
+def _group_device(hass: HomeAssistant, entry: MockConfigEntry) -> str:
+    devices = dr.async_get(hass).async_get_devices(
+        identifiers={(DOMAIN, f"group_{entry.entry_id}")}
+    )
+    assert len(devices) == 1
+    return devices[0].id
+
+
+def _sub_device(hass: HomeAssistant, address: str) -> str:
+    devices = dr.async_get(hass).async_get_devices(identifiers={(DOMAIN, address)})
+    assert len(devices) == 1
+    return devices[0].id
+
+
+@requires("group_volume_range")
+async def test_offset_volume_range_keeps_every_member_in_range(
+    hass: HomeAssistant,
+    sub: FakeSubwoofer,
+    second_sub: FakeSubwoofer,
+    setup_entry: SetupEntry,
+) -> None:
+    """The group's range narrows by the offsets; Matched keeps the full range."""
+    await _setup_subs(setup_entry)
+    entry = await _setup_group(
+        hass, volume_mode="offset", offsets={ADDRESS: -2, ADDRESS2: 4}
+    )
+    volume = _group_entity(hass, entry, "number", "volume")
+    attributes = hass.states.get(volume).attributes
+    assert (attributes["min"], attributes["max"]) == (-58, -4)
+    # At the top of the range, sub 2 is at 0 dB
+    await _call(hass, "number", volume, value=-4)
+    assert sub.settings["VOLUME"] == -6
+    assert second_sub.settings["VOLUME"] == 0
+
+    matched = await _setup_group(hass, members=[ADDRESS, ADDRESS2])
+    attributes = hass.states.get(_group_entity(hass, matched, "number", "volume"))
+    assert (attributes.attributes["min"], attributes.attributes["max"]) == (-60, 0)
+
+
+@requires("group_commands")
+async def test_failed_member_command_is_sent_again(
+    hass: HomeAssistant,
+    sub: FakeSubwoofer,
+    second_sub: FakeSubwoofer,
+    setup_entry: SetupEntry,
+) -> None:
+    """A member whose command fails once is sent it again."""
+    await _setup_subs(setup_entry)
+    entry = await _setup_group(hass)
+    volume = _group_entity(hass, entry, "number", "volume")
+    second_sub.fail_writes = 1
+    await _call(hass, "number", volume, value=-25)
+    assert sub.settings["VOLUME"] == -25
+    assert second_sub.settings["VOLUME"] == -25
+    assert float(_state(hass, volume)) == -25
+
+
+@requires("group_commands")
+async def test_member_that_does_not_follow_keeps_the_group_volume(
+    hass: HomeAssistant,
+    sub: FakeSubwoofer,
+    second_sub: FakeSubwoofer,
+    setup_entry: SetupEntry,
+) -> None:
+    """The group keeps its volume and names the member it could not reach."""
+    await _setup_subs(setup_entry)
+    entry = await _setup_group(hass)
+    volume = _group_entity(hass, entry, "number", "volume")
+    await _call(hass, "number", volume, value=-20)
+    second_sub.fail_writes = 10
+    with pytest.raises(HomeAssistantError) as raised:
+        await _call(hass, "number", volume, value=-25)
+    assert NAME2 in str(raised.value)
+    await settle()
+    assert sub.settings["VOLUME"] == -25
+    assert second_sub.settings["VOLUME"] == -20
+    assert float(_state(hass, volume)) == -20
+
+
+@requires("group_commands")
+async def test_one_connection_slot_serves_every_member(
+    hass: HomeAssistant,
+    sub: FakeSubwoofer,
+    second_sub: FakeSubwoofer,
+    setup_entry: SetupEntry,
+    bluetooth: FakeBluetooth,
+) -> None:
+    """With one Bluetooth connection slot, members are reached one at a time."""
+    first, second = await _setup_entries(setup_entry)
+    entry = await _setup_group(hass)
+    volume = _group_entity(hass, entry, "number", "volume")
+    for member in (first, second):
+        await member.runtime_data.async_disconnect()
+    bluetooth.slots = 1
+    await _call(hass, "number", volume, value=-25)
+    assert sub.settings["VOLUME"] == -25
+    assert second_sub.settings["VOLUME"] == -25
+
+
+@requires("group_member_cleanup")
+async def test_removed_subwoofer_leaves_its_groups(
+    hass: HomeAssistant, second_sub: FakeSubwoofer, setup_entry: SetupEntry
+) -> None:
+    """A removed subwoofer leaves the group; a group of one is a repair issue."""
+    _, second = await _setup_entries(setup_entry)
+    entry = await _setup_group(
+        hass, volume_mode="offset", offsets={ADDRESS: -2, ADDRESS2: 2}
+    )
+    issue = f"group_too_few_members_{entry.entry_id}"
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue) is None
+
+    await hass.config_entries.async_remove(second.entry_id)
+    await settle()
+    assert entry.options["members"] == [ADDRESS]
+    assert entry.options["offsets"] == {ADDRESS: -2}
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue) is not None
+
+    # Deleting the group clears the issue
+    await hass.config_entries.async_remove(entry.entry_id)
+    await settle()
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue) is None
+    for name in ("strings.json", "translations/en.json"):
+        strings = json.loads((STRINGS / name).read_text(encoding="utf-8"))
+        assert strings["issues"]["group_too_few_members"]["title"]
+
+
+@requires("group_preset_names")
+async def test_group_presets_named_manual_or_mixed_are_told_apart(
+    hass: HomeAssistant,
+    sub: FakeSubwoofer,
+    second_sub: FakeSubwoofer,
+    setup_entry: SetupEntry,
+) -> None:
+    """Presets named Manual or Mixed get their slot added, and load that slot."""
+    for fake in (sub, second_sub):
+        fake.preset_names = ["Mixed", "Manual", "LOW"]
+    await _setup_subs(setup_entry)
+    entry = await _setup_group(hass)
+    preset = _group_entity(hass, entry, "select", "preset")
+    options = hass.states.get(preset).attributes["options"]
+    assert options == [
+        "Mixed (Preset 1)",
+        "Manual (Preset 2)",
+        "LOW",
+        "Default",
+        "Manual",
+        "Mixed",
+    ]
+    await _call(hass, "select", preset, option="Manual (Preset 2)")
+    assert _loaded_slots(sub)[-1] == 2
+    assert _loaded_slots(second_sub)[-1] == 2
+    assert _state(hass, preset) == "Manual (Preset 2)"
+    await _call(hass, "select", preset, option="Mixed (Preset 1)")
+    assert _state(hass, preset) == "Mixed (Preset 1)"
+
+
+@requires("group_preset_names")
+async def test_unnamed_slot_does_not_match_a_named_preset(
+    hass: HomeAssistant,
+    sub: FakeSubwoofer,
+    second_sub: FakeSubwoofer,
+    setup_entry: SetupEntry,
+) -> None:
+    """An unnamed slot ("Preset 1") does not match a preset named Preset 1."""
+    sub.preset_names = ["", "MEDIUM", "LOW"]
+    second_sub.preset_names = ["MEDIUM", "Preset 1", "LOW"]
+    await _setup_subs(setup_entry)
+    entry = await _setup_group(hass)
+    preset = _group_entity(hass, entry, "select", "preset")
+    options = hass.states.get(preset).attributes["options"]
+    assert options == ["MEDIUM", "LOW", "Default", "Manual", "Mixed"]
+
+
+@requires("group_actions")
+async def test_actions_take_a_group_as_its_subwoofers(
+    hass: HomeAssistant,
+    sub: FakeSubwoofer,
+    second_sub: FakeSubwoofer,
+    setup_entry: SetupEntry,
+) -> None:
+    """load_preset and set_volume act on a group's members, at its offsets."""
+    await _setup_subs(setup_entry)
+    entry = await _setup_group(
+        hass, volume_mode="offset", offsets={ADDRESS: -2, ADDRESS2: 2}
+    )
+    group = _group_device(hass, entry)
+
+    await hass.services.async_call(
+        DOMAIN, "load_preset", {"device_ids": [group], "preset": 3}, blocking=True
+    )
+    await settle()
+    assert _loaded_slots(sub)[-1] == 3
+    assert _loaded_slots(second_sub)[-1] == 3
+
+    await hass.services.async_call(
+        DOMAIN, "set_volume", {"device_ids": [group], "volume": -9}, blocking=True
+    )
+    await settle()
+    assert sub.settings["VOLUME"] == -11
+    assert second_sub.settings["VOLUME"] == -7
+
+    # Past the group's range: brought to its end, offsets kept
+    await hass.services.async_call(
+        DOMAIN, "set_volume", {"device_ids": [group], "volume": 0}, blocking=True
+    )
+    await settle()
+    assert sub.settings["VOLUME"] == -4
+    assert second_sub.settings["VOLUME"] == 0
+
+    # A member given its own offset in the call uses it
+    data = {
+        "device_ids": [group],
+        "volume": -20,
+        "offsets": {_sub_device(hass, ADDRESS2): -5},
+    }
+    await hass.services.async_call(DOMAIN, "set_volume", data, blocking=True)
+    await settle()
+    assert sub.settings["VOLUME"] == -22
+    assert second_sub.settings["VOLUME"] == -25
+
+
+@requires("group_actions")
+async def test_sync_from_copies_to_a_group_but_not_from_one(
+    hass: HomeAssistant,
+    sub: FakeSubwoofer,
+    second_sub: FakeSubwoofer,
+    setup_entry: SetupEntry,
+) -> None:
+    """A group target stands for its other members; a group is not a source."""
+    await _setup_subs(setup_entry)
+    entry = await _setup_group(hass)
+    group = _group_device(hass, entry)
+    await hass.services.async_call(
+        "number",
+        "set_value",
+        {"entity_id": entity_id(hass, "number", "volume"), "value": -33},
+        blocking=True,
+    )
+    await settle()
+    data = {
+        "source_device_id": _sub_device(hass, ADDRESS),
+        "target_device_ids": [group],
+    }
+    await hass.services.async_call(DOMAIN, "sync_from", data, blocking=True)
+    await settle()
+    assert second_sub.settings["VOLUME"] == -33
+
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            "sync_from",
+            {"source_device_id": group, "target_device_ids": [group]},
+            blocking=True,
+        )
+    actions = yaml.safe_load((STRINGS / "services.yaml").read_text(encoding="utf-8"))
+    source = actions["sync_from"]["fields"]["source_device_id"]["selector"]["device"]
+    assert source["entity"] == [{"domain": "binary_sensor"}]
+
+
+@requires("group_duplicates")
+async def test_group_with_the_same_subwoofers_is_refused(
+    hass: HomeAssistant, second_sub: FakeSubwoofer, setup_entry: SetupEntry
+) -> None:
+    """A second group of exactly the same subwoofers is refused."""
+    await _setup_subs(setup_entry)
+    await _setup_group(hass)
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "create_group"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {"name": "Again", "members": [ADDRESS2, ADDRESS], "features": ["preset"]},
+    )
+    assert result["errors"] == {"members": "duplicate_group"}

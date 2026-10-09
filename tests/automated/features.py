@@ -30,6 +30,11 @@ def _source_contains(module: str, text: str) -> bool:
     return text in inspect.getsource(_module(module))
 
 
+def _in_groups(module: str, text: str) -> bool:
+    """Return True if the branch has groups and the module contains the text."""
+    return _has("const", "ENTRY_TYPE_GROUP") and _source_contains(module, text)
+
+
 FEATURES: dict[str, Callable[[], bool]] = {
     # PR 6
     "brand_images": lambda: Path(
@@ -85,6 +90,13 @@ FEATURES: dict[str, Callable[[], bool]] = {
         _has("const", "ENTRY_TYPE_GROUP")
         and _has("subwoofer_group", "GROUP_CONNECTION_ATTEMPTS")
     ),
+    # Review fixes to the subwoofer groups (PR 16)
+    "group_volume_range": lambda: _in_groups("number", "def native_max_value"),
+    "group_commands": lambda: _in_groups("subwoofer_group", "async_command_members"),
+    "group_member_cleanup": lambda: _in_groups("", "group_too_few_members"),
+    "group_preset_names": lambda: _in_groups("subwoofer_group", "unnamed_slots"),
+    "group_actions": lambda: _in_groups("helpers", "get_group_for_device"),
+    "group_duplicates": lambda: _in_groups("config_flow", "duplicate_group"),
     # dev only (connection options)
     "connection_modes": lambda: _has("const", "CONF_CONNECTION_MODE"),
     # Review fixes to the connection modes (PR 14)

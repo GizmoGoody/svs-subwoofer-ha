@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 import pytest
 from bleak.exc import BleakError
+from bleak_retry_connector import BleakOutOfConnectionSlotsError
 from homeassistant.const import CONF_ADDRESS, CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
@@ -141,6 +142,7 @@ class FakeSubwoofer:
     - connect_delay=S keeps a connection being set up for S seconds after the
       link is open (as discovering its services does)
     - fail_loads=N fails the next N preset load writes, as a lost link would
+    - fail_writes=N fails the next N setting writes, as a lost link would
     - late_replies=S delivers a read's reply after its first fragment S seconds
       late, as a slow link does (the probe before a command can then still be
       answering when the command goes out)
@@ -166,6 +168,7 @@ class FakeSubwoofer:
         self.refuse_connects = 0
         self.connect_delay = 0.0
         self.fail_loads = 0
+        self.fail_writes = 0
         self.late_replies = 0.0
         self.client: FakeBleakClient | None = None
         self.connects = 0
@@ -289,6 +292,9 @@ class FakeBleakClient:
         ):
             self.sub.fail_loads -= 1
             raise BleakError("The fake subwoofer's link failed")
+        if self.sub.fail_writes and frame[1:3] == b"\xf0\x1f":
+            self.sub.fail_writes -= 1
+            raise BleakError("The fake subwoofer's link failed")
         loop = asyncio.get_running_loop()
         chunks = self.sub.notifications(self.sub.handle(frame))
         late = self.sub.late_replies and frame[1:3] == b"\xf1\x1f"
@@ -346,9 +352,29 @@ def second_sub(fake_subs: dict[str, FakeSubwoofer]) -> FakeSubwoofer:
 SetupEntry = Callable[..., Any]
 
 
+class FakeBluetooth:
+    """The Bluetooth adapters and proxies, as far as connection slots go.
+
+    slots=N allows N connections at a time over all fake subwoofers (None:
+    no limit); one more fails as Home Assistant's Bluetooth stack reports it.
+    """
+
+    def __init__(self) -> None:
+        self.slots: int | None = None
+
+
+@pytest.fixture
+def bluetooth() -> FakeBluetooth:
+    """Return the fake Bluetooth connection slots."""
+    return FakeBluetooth()
+
+
 @pytest.fixture
 async def setup_entry(
-    hass: HomeAssistant, sub: FakeSubwoofer, fake_subs: dict[str, FakeSubwoofer]
+    hass: HomeAssistant,
+    sub: FakeSubwoofer,
+    fake_subs: dict[str, FakeSubwoofer],
+    bluetooth: FakeBluetooth,
 ) -> AsyncGenerator[SetupEntry]:
     """Set up config entries wired to the fake subwoofer; unload them afterwards."""
     # The Bluetooth integration itself is not needed: the connection is faked
@@ -363,6 +389,16 @@ async def setup_entry(
         **kwargs: Any,
     ) -> FakeBleakClient:
         fake = fake_subs[device.address]
+        in_use = sum(
+            1
+            for other in fake_subs.values()
+            if other.client and other.client.is_connected
+        )
+        if bluetooth.slots is not None and in_use >= bluetooth.slots:
+            raise BleakOutOfConnectionSlotsError(
+                "No backend with an available connection slot that can reach "
+                f"address {device.address} was found"
+            )
         if fake.refuse_connects:
             fake.refuse_connects -= 1
             raise BleakError("The fake subwoofer refused the connection")
