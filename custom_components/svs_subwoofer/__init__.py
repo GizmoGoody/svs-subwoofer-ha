@@ -37,7 +37,12 @@ PLATFORMS: list[Platform] = [
 ]
 
 # A subwoofer group has no connection of its own, so it only has these
-GROUP_PLATFORMS: list[Platform] = [Platform.NUMBER, Platform.SELECT]
+GROUP_PLATFORMS: list[Platform] = [
+    Platform.BUTTON,
+    Platform.NUMBER,
+    Platform.SELECT,
+    Platform.SWITCH,
+]
 
 type SVSConfigEntry = ConfigEntry[SVSSubwooferCoordinator | SVSGroup]
 
