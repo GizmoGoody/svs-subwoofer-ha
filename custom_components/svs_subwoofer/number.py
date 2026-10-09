@@ -274,8 +274,6 @@ class SVSGroupVolumeNumber(SVSGroupEntity, RestoreNumber):
 
     _attr_translation_key = "group_volume"
     _attr_icon = "mdi:volume-high"
-    _attr_native_min_value = VOLUME_MIN
-    _attr_native_max_value = VOLUME_MAX
     _attr_native_step = VOLUME_STEP
     _attr_native_unit_of_measurement = "dB"
     _attr_mode = NumberMode.SLIDER
@@ -298,6 +296,20 @@ class SVSGroupVolumeNumber(SVSGroupEntity, RestoreNumber):
                 for address, offset in self.svs_group.offsets.items()
             }
         self._adopt_agreed_volume()
+
+    @property
+    def native_min_value(self) -> float:
+        """Return the lowest group volume that keeps every member in range."""
+        return VOLUME_MIN - min(self.svs_group.offsets.values(), default=0)
+
+    @property
+    def native_max_value(self) -> float:
+        """Return the highest group volume that keeps every member in range.
+
+        With offsets, the group's range is narrower than a subwoofer's, so no
+        member is ever asked to go past -60 or 0 dB and the offsets are kept.
+        """
+        return VOLUME_MAX - max(self.svs_group.offsets.values(), default=0)
 
     def _member_volumes(self) -> dict[str, float]:
         """Return the volume of each member that has reported it."""
@@ -367,15 +379,15 @@ class SVSGroupVolumeNumber(SVSGroupEntity, RestoreNumber):
 
     async def async_set_native_value(self, value: float) -> None:
         """Set every member to its target for this group volume."""
-        group_volume = int(value)
+        # A volume outside the group's range is brought to its nearest end,
+        # so every member stays in range and the offsets are kept
+        group_volume = int(
+            min(max(value, self.native_min_value), self.native_max_value)
+        )
         targets = {
             address: group_volume + offset
             for address, offset in self.svs_group.offsets.items()
         }
-        if not all(VOLUME_MIN <= target <= VOLUME_MAX for target in targets.values()):
-            # A member would go past its limit: leave everything as it is
-            self.async_write_ha_state()
-            return
         coordinators = self.svs_group.coordinators()
         results = await asyncio.gather(
             *(
