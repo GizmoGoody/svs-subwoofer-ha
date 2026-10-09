@@ -9,8 +9,8 @@ members.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
 import logging
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 from homeassistant.config_entries import ConfigEntry
