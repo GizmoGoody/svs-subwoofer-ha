@@ -137,6 +137,7 @@ class FakeSubwoofer:
     - silent=True accepts the connection and answers nothing
     - ignore_loads=N ignores the next N preset loads, as if they were lost
     - lose_names={slot: N} loses the next N name replies for a preset slot
+    - refuse_connects=N refuses the next N connections, as if out of range
     """
 
     def __init__(self) -> None:
@@ -156,6 +157,7 @@ class FakeSubwoofer:
         self.silent = False
         self.ignore_loads = 0
         self.lose_names: dict[int, int] = {}
+        self.refuse_connects = 0
         self.client: FakeBleakClient | None = None
         self.connects = 0
         self.received: list[bytes] = []
@@ -339,6 +341,9 @@ async def setup_entry(
         **kwargs: Any,
     ) -> FakeBleakClient:
         fake = fake_subs[device.address]
+        if fake.refuse_connects:
+            fake.refuse_connects -= 1
+            raise BleakError("The fake subwoofer refused the connection")
         fake.connects += 1
         fake.client = FakeBleakClient(fake, disconnected_callback)
         return fake.client
