@@ -2229,29 +2229,37 @@ class SvsCardEditor extends HTMLElement {
       <ha-expansion-panel outlined expanded>
         <div slot="header" role="heading" aria-level="3">SVS style</div>
         <div class="content">
-          <ha-form id="form"></ha-form>
+          <ha-form id="finish"></ha-form>
           <div class="row" id="row"><ha-button id="randomize"></ha-button></div>
+          <ha-form id="form"></ha-form>
         </div>
       </ha-expansion-panel>`;
+    this._finishForm = this.shadowRoot.getElementById("finish");
     this._form = this.shadowRoot.getElementById("form");
-    this._form.computeLabel = (s) => s.label ?? s.name;
-    this._form.computeHelper = (s) => s.helper;
-    this._form.addEventListener("value-changed", (ev) => {
-      ev.stopPropagation();
-      const v = ev.detail.value;
-      this._update({
-        finish: v.finish ?? "none", finish_extent: v.finish_extent ?? "card", features_style: v.features_style ?? "match",
-        vibration: v.vibration !== false, bluetooth: v.bluetooth ?? "show", standby_badge: !!v.standby_badge,
-        driver_ring: v.driver_ring !== false,
-      });
-    });
+    for (const form of [this._finishForm, this._form]) {
+      form.computeLabel = (s) => s.label ?? s.name;
+      form.computeHelper = (s) => s.helper;
+      form.addEventListener("value-changed", (ev) => this._changed(ev));
+    }
     this.shadowRoot.getElementById("randomize").addEventListener("click", () => {
       this._update({ pattern: 1 + Math.floor(Math.random() * 99999) });
     });
   }
 
+  // Either form changed: both forms' values make the card's options
+  _changed(ev) {
+    ev.stopPropagation();
+    const v = { ...this._finishForm.data, ...this._form.data, ...ev.detail.value };
+    this._update({
+      finish: v.finish ?? "none", finish_extent: v.finish_extent ?? "card", features_style: v.features_style ?? "match",
+      vibration: v.vibration !== false, bluetooth: v.bluetooth ?? "show", standby_badge: !!v.standby_badge,
+      driver_ring: v.driver_ring !== false,
+    });
+  }
+
   set hass(hass) {
     this._hass = hass;
+    this._finishForm.hass = hass;
     this._form.hass = hass;
     if (this._tileEditor) this._tileEditor.hass = withSubwooferAttributes(hass, this._config?.entity);
   }
@@ -2299,20 +2307,23 @@ class SvsCardEditor extends HTMLElement {
 
   _render() {
     const c = this._config;
-    this._form.schema = [
+    this._finishForm.schema = [
       { name: "finish", label: "Finish", selector: { select: { mode: "dropdown", options: FINISHES.map(([value, label]) => ({ value, label })) } } },
+    ];
+    this._finishForm.data = { finish: c.finish };
+    this._form.schema = [
       ...(c.finish === "none" ? [] : [{
         name: "finish_extent", label: "Finish extent",
-        helper: "Container: in an expander card, choose it on the header card and on each card inside. The header draws the finish across the whole expander card, and the cards inside let it show through.",
+        helper: "Normally set to Card. Set to Container when the SVS Subwoofer card is contained in another card (e.g. Expander card) to extend the selected Finish to that card.",
         selector: { select: { mode: "dropdown", options: FINISH_EXTENTS.map(([value, label]) => ({ value, label })) } },
       }, {
         name: "features_style", label: "Features style",
-        helper: "Match style: the controls sit on the finish. Flat: on a patch of the finish's base color, without grain or reflections. Inset: in a channel pressed into the panel.",
+        helper: "Match style: the finish shows through the feature controls. Flat: similar to match but without grain or reflections. Inset: 3D machine appearance.",
         selector: { select: { mode: "dropdown", options: FEATURES_STYLES.map(([value, label]) => ({ value, label })) } },
       }]),
       {
         name: "bluetooth", label: "Bluetooth badge",
-        helper: "To connect and disconnect with a tap, set Icon tap behavior (under Interactions) to toggle the subwoofer's Connection switch. On a group in the panel, the badge shows its subwoofers together.",
+        helper: "To connect and disconnect with a tap, set Icon tap behavior (under Interactions) to Perform action, Switch: Toggle, with the subwoofer's Connection switch as the target. On a group subwoofer, the badge shows its subwoofers together.",
         selector: { select: { mode: "dropdown", options: BLUETOOTH.map(([value, label]) => ({ value, label })) } },
       },
       {
@@ -2322,7 +2333,7 @@ class SvsCardEditor extends HTMLElement {
       },
       {
         name: "standby_badge", label: "Standby mode badge",
-        helper: "A letter on the driver for the standby mode: A (Auto On), O (On) or T (Trigger).",
+        helper: "A letter on the driver for the standby mode: A (Auto), O (On) or T (Trigger).",
         selector: { boolean: {} },
       },
       {
@@ -2331,7 +2342,7 @@ class SvsCardEditor extends HTMLElement {
         selector: { boolean: {} },
       },
     ];
-    this._form.data = { finish: c.finish, finish_extent: c.finish_extent ?? "card", features_style: c.features_style ?? "match", vibration: c.vibration !== false, bluetooth: c.bluetooth ?? "show", standby_badge: !!c.standby_badge, driver_ring: c.driver_ring !== false };
+    this._form.data = { finish_extent: c.finish_extent ?? "card", features_style: c.features_style ?? "match", vibration: c.vibration !== false, bluetooth: c.bluetooth ?? "show", standby_badge: !!c.standby_badge, driver_ring: c.driver_ring !== false };
     const label = RANDOMIZE_LABEL[c.finish];
     this.shadowRoot.getElementById("row").style.display = label ? "" : "none";
     this.shadowRoot.getElementById("randomize").textContent = label ?? "";
@@ -2396,11 +2407,11 @@ class SvsPanelCardEditor extends HTMLElement {
         ha-form { display: block; margin-top: 24px; }
       </style>
       <ha-expansion-panel outlined header="Main subwoofer">
-        <p class="hint">We recommend a subwoofer group here, so the card controls all of its subwoofers together.</p>
+        <p class="hint">Recommended: a subwoofer group, so the card controls all of its subwoofers together.</p>
         <div id="card"></div>
       </ha-expansion-panel>
       <h3>Subwoofers in the collapsible section</h3>
-      <p class="hint">We recommend the group's member subwoofers here, so each one can also be adjusted on its own. Each numbered tab is one subwoofer; the plus button adds one.</p>
+      <p class="hint">Recommended: the group's member subwoofers, so each one can also be adjusted on its own. Each numbered tab is one subwoofer; the plus button adds one.</p>
       <div id="rows"></div>
       <div class="toolbar">
         <div class="tabs" role="tablist" aria-label="Subwoofers in the collapsible section"></div>
