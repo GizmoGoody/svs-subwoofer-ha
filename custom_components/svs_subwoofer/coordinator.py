@@ -70,6 +70,12 @@ PRESET_SETTLE_DELAY = 0.5
 # How many times a preset load is sent when the sub does not confirm it
 PRESET_LOAD_ATTEMPTS = 2
 
+# Before a preset load is sent, wait until nothing has been received for this
+# long (seconds), at most PRESET_QUIET_MAX in all: the end of an earlier reply
+# must not be taken for the sub's answer to the load
+PRESET_QUIET = 0.3
+PRESET_QUIET_MAX = 3.0
+
 # Number of presets on the subwoofer (3 user presets + factory default)
 PRESET_COUNT = 4
 
@@ -812,6 +818,9 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return False
 
             try:
+                # A probe sent just before (see _ensure_writable) can still be
+                # answering; its reply must not count as the load's
+                await self._async_wait_quiet()
                 # Hold off preset evaluation until the new settings are recorded
                 self._loading_preset = True
                 self._manual_pending = False
@@ -872,6 +881,18 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return False
             finally:
                 self._loading_preset = False
+
+    async def _async_wait_quiet(self) -> None:
+        """Wait until the sub has been silent for a moment.
+
+        Caller must hold _command_lock, so nothing new is requested meanwhile.
+        """
+        deadline = time.monotonic() + PRESET_QUIET_MAX
+        while time.monotonic() < deadline:
+            silent_for = time.monotonic() - self._last_rx
+            if silent_for >= PRESET_QUIET:
+                return
+            await asyncio.sleep(PRESET_QUIET - silent_for)
 
     async def _async_wait_for_preset_push(self) -> bool:
         """Wait for the settings the sub sends by itself after loading a preset.
