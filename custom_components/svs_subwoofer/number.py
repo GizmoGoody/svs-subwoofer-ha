@@ -20,6 +20,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import SVSConfigEntry
 from .const import (
     GROUP_FEATURE_VOLUME,
+    GROUP_STATE_MIXED,
     LPF_FREQ_MAX,
     LPF_FREQ_MIN,
     LPF_FREQ_STEP,
@@ -41,7 +42,7 @@ from .const import (
     VOLUME_STEP,
 )
 from .coordinator import SVSSubwooferCoordinator
-from .subwoofer_group import SVSGroup, SVSGroupEntity, active_preset_name
+from .subwoofer_group import SVSGroup, SVSGroupEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -321,9 +322,11 @@ class SVSGroupVolumeNumber(SVSGroupEntity, RestoreNumber):
 
     def _same_preset_active(self) -> bool:
         """Return True if every member has the same preset active."""
-        coordinators = self.svs_group.coordinators()
-        names = {active_preset_name(c) for c in coordinators.values()}
-        return len(names) == 1 and not names & {None, PRESET_MANUAL_OPTION}
+        return self.svs_group.active_preset() not in (
+            None,
+            PRESET_MANUAL_OPTION,
+            GROUP_STATE_MIXED,
+        )
 
     def _agreed_volume(self) -> tuple[float, dict[str, float]] | None:
         """Return the group volume the members agree on, and their volumes.
