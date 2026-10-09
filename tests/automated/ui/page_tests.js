@@ -316,7 +316,7 @@
       if (!shown(row.button)) throw new Error("Copy from main is not shown on the row's volume");
       if (row.button.disabled) throw new Error("Copy from main is grayed out on the row's volume");
       expectEqual(row.button.textContent, "Copy from main", "the button's label");
-      row.button.click();
+      row.button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       expectEqual(row.saved.at(-1), main, "the copied settings");
       await until(() => row.editor.querySelector("ha-form").data.min === -40, "the form to show the copied settings");
 
