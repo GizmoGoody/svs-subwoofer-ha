@@ -51,10 +51,13 @@
           "disconnect_after": "Connection hang-on time"
         },
         "data_description": {
-          "reconnect_interval": "While disconnected, how often Home Assistant briefly connects to refresh the subwoofer's settings, for example after a change made in the SVS app or on the rear panel. Each refresh briefly lights the panel LEDs. Set to 0 to connect only when a command is sent.",
+          "reconnect_interval": "While disconnected, how often Home Assistant briefly connects to refresh the subwoofer's settings, for example after a change made in the SVS app or on the rear panel. Each refresh briefly lights the panel LEDs. Must be longer than the connection hang-on time. Set to 0 to connect only when a command is sent.",
           "disconnect_after": "How long the connection remains active after the last command. A shorter time frees the subwoofer for the SVS app sooner."
         }
       }
+    },
+    "error": {
+      "refresh_within_hang_on": "The refresh interval must be longer than the connection hang-on time, or 0. A shorter one keeps the subwoofer connected almost all the time and lights its panel LEDs at every refresh."
     }
   },
   "entity": {

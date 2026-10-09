@@ -274,8 +274,21 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         "Periodic connection to %s failed: %s", self.address, err
                     )
                     continue
+                # A sub can accept the connection and then not answer: that is
+                # silence, so these reconnects back off as Constant's do
+                if not await self._async_wait_responsive():
+                    await self._async_drop_connection()
+                    self._note_silence()
+                    continue
                 _LOGGER.debug("Periodic connection refreshed %s", self.address)
                 self._schedule_idle_disconnect()
+
+    async def _async_wait_responsive(self) -> bool:
+        """Wait for the sub to answer on this connection, up to PROBE_TIMEOUT."""
+        deadline = time.monotonic() + PROBE_TIMEOUT
+        while not self._responsive and time.monotonic() < deadline:
+            await asyncio.sleep(0.1)
+        return self._responsive
 
     async def _quiet_keep_alive_loop(self) -> None:
         """Keep the link busy with a read that does not wake the panel LEDs.
