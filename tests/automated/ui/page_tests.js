@@ -185,7 +185,7 @@
       if ([...style.shadowRoot.querySelectorAll("*")].some((n) => n.localName.endsWith("tile-card-editor"))) throw new Error("the Card section shows the tile card's options");
       const cardAbove = section.querySelector("svs-subwoofer-card-editor");
       if (!cardAbove) throw new Error("the card's editor is not in the main subwoofer's section");
-      if (getComputedStyle(cardAbove.shadowRoot.querySelector("ha-expansion-panel")).display !== "none") throw new Error("the Main subwoofer section shows the style options");
+      if (cardAbove.shadowRoot.querySelector("ha-expansion-panel")?.style.display !== "none") throw new Error("the Main subwoofer section shows the style options");
       if (!(section.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING)) throw new Error("the main subwoofer's section is not before the heading");
 
       // State content and features stay as edited (the first tab is open)
