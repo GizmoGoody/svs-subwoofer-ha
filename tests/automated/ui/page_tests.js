@@ -403,7 +403,7 @@
       if (ours.control && !ours.hassHasSwitch) throw new Error(`the SVS editor's action editor does not know the Connection switch:\n${report}`);
     });
 
-    await test("console: a selected key keeps the others' color and only looks pressed in", async () => {
+    await test("console: keys keep one color whether selected or not; preset keys at full strength", async () => {
       const card = document.createElement("svs-subwoofer-card");
       card.setConfig({
         type: "custom:svs-subwoofer-card", entity: first, finish: "fabric", features_style: "console",
@@ -420,7 +420,14 @@
         if (!on || !off) continue;
         const tint = (b) => Number(getComputedStyle(b, "::before").opacity);
         if (tint(on) !== tint(off)) throw new Error(`${feature.localName}: the selected key's tint is ${tint(on)}, the others' ${tint(off)}`);
-        if (getComputedStyle(on).color !== getComputedStyle(off).color) throw new Error(`${feature.localName}: the selected key's text color differs`);
+        // Preset keys show their colors at full strength, as the volume
+        // slider does; each picks its own text color for that
+        if (feature.localName === "svs-subwoofer-presets" && keys.some((b) => tint(b) !== 1)) {
+          throw new Error(`preset keys are not at full strength: ${keys.map(tint).join(", ")}`);
+        }
+        if (feature.localName === "svs-subwoofer-standby" && getComputedStyle(on).color !== getComputedStyle(off).color) {
+          throw new Error(`${feature.localName}: the selected key's text color differs`);
+        }
         if (!getComputedStyle(on).boxShadow.includes("inset")) throw new Error(`${feature.localName}: the selected key does not look pressed in`);
         if (getComputedStyle(on).transform === "none") throw new Error(`${feature.localName}: the selected key is not pressed down`);
       }
