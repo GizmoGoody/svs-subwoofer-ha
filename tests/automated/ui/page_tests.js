@@ -348,10 +348,65 @@
       if (shown(await until(() => alone.querySelector("ha-button"), "the editor"))) throw new Error("Copy from main is shown outside the panel");
     });
 
-    await test("inset: a selected key keeps the others' color and only looks pressed in", async () => {
+    // Icon tap behavior set to Perform action, Switch: Toggle: what the action
+    // editor shows for its target, in Home Assistant's own tile card editor
+    // and in the SVS Subwoofer card's, and whether the Connection switch can
+    // be chosen. Fails when the SVS editor shows less than Home Assistant's.
+    await test("interactions: Perform action offers a target, the Connection switch among them", async () => {
+      const connection = entities().find((e) => e.translation_key === "connection" && e.entity_id.startsWith("switch."))?.entity_id;
+      const action = { action: "perform-action", perform_action: "switch.toggle" };
+      const deep = (root, selector, found = []) => {
+        for (const el of root.querySelectorAll("*")) {
+          if (el.matches(selector)) found.push(el);
+          if (el.shadowRoot) deep(el.shadowRoot, selector, found);
+        }
+        return found;
+      };
+      const describe = async (label, editor) => {
+        await sleep(2000);
+        for (const panel of deep(editor.shadowRoot ?? editor, "ha-expansion-panel")) panel.expanded = true;
+        const control = await until(() => deep(editor.shadowRoot ?? editor, "ha-service-control")[0], `${label}: the action editor`, 8000).catch(() => null);
+        if (!control) return { label, control: false };
+        await sleep(1500);
+        const selector = control.shadowRoot.querySelector("ha-selector.target-selector");
+        const inner = selector?.shadowRoot?.firstElementChild;
+        const picker = inner && deep(inner.shadowRoot ?? inner, "ha-target-picker")[0];
+        return {
+          label,
+          control: true,
+          action: control.value?.action ?? control._value?.action,
+          targetSelector: !!selector,
+          selectorElement: inner?.localName ?? null,
+          selectorDefined: inner ? !!customElements.get(inner.localName) : null,
+          picker: !!picker,
+          pickerText: (picker?.shadowRoot?.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 160),
+          hassHasSwitch: !!control.hass?.entities?.[connection] && !!control.hass?.states?.[connection],
+          hassSame: control.hass === hass(),
+        };
+      };
+      const helpers = await window.loadCardHelpers();
+      helpers.createCardElement({ type: "tile", entity: first });
+      await customElements.whenDefined("hui-tile-card");
+      const plainType = (await customElements.get("hui-tile-card").getConfigElement()).tagName.toLowerCase();
+      const plain = hosted(plainType).el;
+      plain.setConfig({ type: "tile", entity: first, icon_tap_action: action });
+      const theirs = await describe("Home Assistant's tile card editor", plain);
+      stage().replaceChildren();
+      const svs = hosted("svs-subwoofer-card-editor").el;
+      svs.setConfig({ type: "custom:svs-subwoofer-card", entity: first, icon_tap_action: action });
+      const ours = await describe("the SVS Subwoofer card's editor", svs);
+      const report = JSON.stringify({ connection, theirs, ours }, null, 1);
+      console.log(`target diagnostic: ${report}`);
+      results.push({ name: "diagnostic: the action editor's target (report only)", ok: true, detail: report });
+      if (!connection) throw new Error("no Connection switch on the fake subwoofer");
+      if (theirs.picker && !ours.picker) throw new Error(`the SVS editor shows no target picker where Home Assistant's does:\n${report}`);
+      if (ours.control && !ours.hassHasSwitch) throw new Error(`the SVS editor's action editor does not know the Connection switch:\n${report}`);
+    });
+
+    await test("console: a selected key keeps the others' color and only looks pressed in", async () => {
       const card = document.createElement("svs-subwoofer-card");
       card.setConfig({
-        type: "custom:svs-subwoofer-card", entity: first, finish: "fabric", features_style: "inset",
+        type: "custom:svs-subwoofer-card", entity: first, finish: "fabric", features_style: "console",
         features: [{ type: "custom:svs-subwoofer-standby" }, { type: "custom:svs-subwoofer-presets" }],
       });
       card.hass = hass();
@@ -536,7 +591,7 @@
     ];
     const looks = [["none", "match"]];
     for (const finish of ["black_ash", "black_oak", "gloss_black", "gloss_white", "fabric", "grille"]) {
-      for (const style of ["match", "flat", "inset"]) looks.push([finish, style]);
+      for (const style of ["match", "flat", "console"]) looks.push([finish, style]);
     }
     const cards = [];
     for (const [finish, style] of looks) {
@@ -547,7 +602,7 @@
       cards.push([`${finish} · ${style}`, card]);
     }
     for (const finish of ["fabric", "gloss_white"]) {
-      for (const style of ["match", "flat", "inset"]) {
+      for (const style of ["match", "flat", "console"]) {
         const panel = document.createElement("svs-subwoofer-panel-card");
         panel.setConfig({
           type: "custom:svs-subwoofer-panel-card", entity: first, finish, features_style: style, features: [features[0]],
@@ -619,8 +674,8 @@
       { type: "custom:svs-subwoofer-standby" },
     ];
     const looks = [
-      ["none", "match"], ["black_ash", "match"], ["black_ash", "inset"], ["black_oak", "flat"],
-      ["gloss_black", "match"], ["gloss_white", "inset"], ["fabric", "match"], ["grille", "inset"],
+      ["none", "match"], ["black_ash", "match"], ["black_ash", "console"], ["black_oak", "flat"],
+      ["gloss_black", "match"], ["gloss_white", "console"], ["fabric", "match"], ["grille", "console"],
     ];
     for (const [finish, style] of looks) {
       const card = document.createElement("svs-subwoofer-card");
@@ -635,9 +690,9 @@
     // The plain loupe (no thresholds), and no ring around the driver
     const plain = document.createElement("svs-subwoofer-card");
     plain.setConfig({
-      type: "custom:svs-subwoofer-card", entity: first, name: "black_oak · inset · no thresholds, no ring",
+      type: "custom:svs-subwoofer-card", entity: first, name: "black_oak · console · no thresholds, no ring",
       features: [{ type: "custom:svs-subwoofer-volume" }], features_position: "inline",
-      finish: "black_oak", features_style: "inset", driver_ring: false,
+      finish: "black_oak", features_style: "console", driver_ring: false,
     });
     plain.hass = hass();
     box.append(plain);
