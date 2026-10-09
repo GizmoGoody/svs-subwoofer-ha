@@ -279,9 +279,9 @@ async def test_duplicate_and_reserved_preset_names_get_their_slot(
 
 
 def _device_id(hass: HomeAssistant) -> str:
-    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, ADDRESS)})
-    assert device
-    return device.id
+    devices = dr.async_get(hass).async_get_devices(identifiers={(DOMAIN, ADDRESS)})
+    assert len(devices) == 1
+    return devices[0].id
 
 
 @requires("load_failure_reported")
