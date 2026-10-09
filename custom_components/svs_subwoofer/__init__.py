@@ -17,6 +17,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import device_registry as dr
 
 from .const import CONF_KEEP_ALIVE, DEFAULT_KEEP_ALIVE, DOMAIN
 from .coordinator import SVSSubwooferCoordinator
@@ -48,6 +49,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: SVSConfigEntry) -> bool:
         address,
         name,
         keep_alive=entry.options.get(CONF_KEEP_ALIVE, DEFAULT_KEEP_ALIVE),
+    )
+
+    # Register the device before connecting, so the firmware version and
+    # model reported during the first connection have a device to go to
+    dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id, **coordinator.device_info
     )
 
     # Not ready (for example, the Bluetooth proxy has not seen the sub yet
