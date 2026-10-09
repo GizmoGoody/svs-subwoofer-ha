@@ -547,10 +547,21 @@ class SVSSubwooferOptionsFlow(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Set the Periodic connection timing."""
+        errors: dict[str, str] = {}
         if user_input is not None:
-            return self.async_create_entry(
-                data={CONF_CONNECTION_MODE: CONNECTION_PERIODIC, **user_input}
+            interval = user_input.get(
+                CONF_RECONNECT_INTERVAL, DEFAULT_RECONNECT_INTERVAL
             )
+            hang_on = user_input.get(CONF_DISCONNECT_AFTER, DEFAULT_DISCONNECT_AFTER)
+            # A refresh that is not longer than the hang-on time keeps the
+            # link up nearly all the time and lights the panel LEDs at every
+            # reconnect
+            if 0 < interval <= hang_on:
+                errors[CONF_RECONNECT_INTERVAL] = "refresh_within_hang_on"
+            else:
+                return self.async_create_entry(
+                    data={CONF_CONNECTION_MODE: CONNECTION_PERIODIC, **user_input}
+                )
 
         options = self.config_entry.options
         return self.async_show_form(
@@ -571,6 +582,7 @@ class SVSSubwooferOptionsFlow(OptionsFlow):
                     ): _duration_selector(10, 600, 10),
                 }
             ),
+            errors=errors,
         )
 
 
