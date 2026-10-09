@@ -56,6 +56,10 @@ LIVENESS_STALE_AFTER = 20.0
 # How long to wait for the subwoofer to answer a probe (seconds)
 PROBE_TIMEOUT = 3.0
 
+# At shutdown, how long to wait for a connection in progress to finish before
+# the background loops are stopped anyway (seconds)
+SHUTDOWN_WAIT = 10.0
+
 # Waits between automatic reconnects while a subwoofer keeps not answering
 # (seconds). The first reconnect is immediate; the last delay repeats.
 RECONNECT_BACKOFF = (30.0, 60.0, 120.0, 300.0)
@@ -1083,18 +1087,33 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_shutdown(self) -> None:
         """Stop background tasks and disconnect when the entry unloads."""
-        if self._keep_alive_task:
-            self._keep_alive_task.cancel()
-            self._keep_alive_task = None
-        if self._quiet_keep_alive_task:
-            self._quiet_keep_alive_task.cancel()
-            self._quiet_keep_alive_task = None
-        if self._refresh_task:
-            self._refresh_task.cancel()
-            self._refresh_task = None
-        if self._names_task:
-            self._names_task.cancel()
-            self._names_task = None
+        # The loops connect only while holding the command lock. Stopping them
+        # while it is held here means none is part-way through connecting: a
+        # cancelled connect could leave a connection open that nothing closes,
+        # which would lock the SVS app out.
+        try:
+            async with asyncio.timeout(SHUTDOWN_WAIT):
+                await self._command_lock.acquire()
+            locked = True
+        except TimeoutError:
+            locked = False
+        tasks = [
+            task
+            for task in (
+                self._keep_alive_task,
+                self._quiet_keep_alive_task,
+                self._refresh_task,
+                self._names_task,
+            )
+            if task
+        ]
+        self._keep_alive_task = self._quiet_keep_alive_task = self._refresh_task = None
+        self._names_task = None
+        for task in tasks:
+            task.cancel()
+        if locked:
+            self._command_lock.release()
+        await asyncio.gather(*tasks, return_exceptions=True)
         await self.async_disconnect()
         await super().async_shutdown()
 
