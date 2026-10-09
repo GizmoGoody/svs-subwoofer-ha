@@ -720,11 +720,16 @@ class SvsVolume extends HTMLElement {
   }
 }
 
-class SvsVolumeEditor extends HTMLElement {
-  connectedCallback() {
-    if (this._form) this._renderCopy();
-  }
+/**
+ * The volume feature of a panel row whose settings are being opened, with the
+ * main subwoofer's volume settings to copy. Home Assistant's editor dialog
+ * opens a feature's settings itself (not inside the row's editor), so the
+ * panel editor notes here which feature it is, and the volume settings
+ * editor opened for that feature offers the copy.
+ */
+let rowVolume = null;
 
+class SvsVolumeEditor extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     if (this._form) this._form.hass = hass;
@@ -734,6 +739,8 @@ class SvsVolumeEditor extends HTMLElement {
     // The configuration this editor just sent comes back here: the fields
     // already show it (an emptied field included), so they are left alone
     const echo = this._config && JSON.stringify(config) === JSON.stringify(this._config);
+    // Opened for a panel row's volume feature: it can copy the main subwoofer's
+    if (this._row === undefined) this._row = rowVolume?.key === JSON.stringify(config) ? rowVolume : null;
     this._config = config;
     if (!echo || !this._form) this._render();
   }
@@ -794,28 +801,14 @@ class SvsVolumeEditor extends HTMLElement {
       : { ...range, colored: false };
   }
 
-  /**
-   * The main subwoofer's volume settings, when this editor is in a row of the
-   * panel card: the row's tile editor (an ancestor, across shadow roots)
-   * provides them as svsMainVolume.
-   */
-  _mainVolume() {
-    for (let n = this.parentNode ?? this.getRootNode()?.host; n; n = n.parentNode ?? n.host) {
-      if (typeof n.svsMainVolume === "function") return { source: true, volume: n.svsMainVolume() };
-    }
-    return { source: false };
-  }
-
+  // Shown only for a panel row's volume, when the main subwoofer has one
   _renderCopy() {
-    const { source, volume } = this._mainVolume();
-    this._copy.hidden = !source;
-    this._copy.disabled = !volume;
-    this._copy.title = volume ? "" : "The main subwoofer has no SVS Subwoofer volume feature";
+    this._copy.style.display = this._row?.volume() ? "" : "none";
   }
 
   // The main subwoofer's range and thresholds replace this row's
   _copyMain() {
-    const { volume } = this._mainVolume();
+    const volume = this._row?.volume();
     if (!volume) return;
     this._config = { ...JSON.parse(JSON.stringify(volume)), type: this._config.type };
     this._note.textContent = "";
@@ -2497,6 +2490,10 @@ class SvsPanelCardEditor extends HTMLElement {
   _showCard() {
     if (!this._cardEditor) {
       this._cardEditor = document.createElement(EDITOR_TYPE);
+      // The main subwoofer's own features never offer a copy from the main
+      this._cardEditor.addEventListener("edit-sub-element", () => {
+        rowVolume = null;
+      });
       this._cardEditor.addEventListener("config-changed", (ev) => {
         ev.stopPropagation();
         const keep = Object.fromEntries(PANEL_KEYS.filter((k) => k in this._config).map((k) => [k, this._config[k]]));
@@ -2618,8 +2615,14 @@ class SvsPanelCardEditor extends HTMLElement {
     if (this._selected !== index) return;  // another tab was chosen meanwhile
     // Only single subwoofers' volumes in the entity picker
     editor.svsEntities = svsVolumes(this._hass, false);
-    // The volume settings editor in this row offers the main subwoofer's
-    editor.svsMainVolume = () => (this._config.features ?? []).find((f) => f.type === "custom:svs-subwoofer-volume");
+    // This row's volume settings, when opened, offer the main subwoofer's
+    editor.addEventListener("edit-sub-element", (ev) => {
+      const feature = ev.detail?.config;
+      rowVolume = feature?.type === "custom:svs-subwoofer-volume" ? {
+        key: JSON.stringify(feature),
+        volume: () => (this._config.features ?? []).find((f) => f.type === "custom:svs-subwoofer-volume"),
+      } : null;
+    });
     editor.addEventListener("config-changed", (ev) => {
       ev.stopPropagation();
       const next = { ...ev.detail.config };
