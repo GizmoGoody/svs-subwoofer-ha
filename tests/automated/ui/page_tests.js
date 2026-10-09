@@ -174,11 +174,18 @@
       const heading = el.shadowRoot.querySelector("h3");
       expectEqual(heading?.textContent, "Subwoofers in the collapsible section", "the heading above the tabs");
       // The main subwoofer's editor is in a collapsed section above the heading, not on a tab
-      const section = el.shadowRoot.querySelector("ha-expansion-panel");
-      expectEqual(section?.getAttribute("header"), "Main subwoofer", "the main subwoofer's section");
-      if (section.expanded) throw new Error("the main subwoofer's section starts expanded");
+      // Two collapsed sections: the Card (its style options) and the Main
+      // subwoofer (the tile card's options)
+      const sections = [...el.shadowRoot.querySelectorAll("ha-expansion-panel")];
+      expectEqual(sections.map((p) => p.getAttribute("header")), ["Card", "Main subwoofer"], "the sections");
+      if (sections.some((p) => p.expanded)) throw new Error("a section starts expanded");
+      const [cardSection, section] = sections;
+      const style = await until(() => cardSection.querySelector("svs-subwoofer-card-editor"), "the card's style options");
+      await until(() => style.shadowRoot.querySelector("#finish")?.schema?.length, "the Finish field");
+      if ([...style.shadowRoot.querySelectorAll("*")].some((n) => n.localName.endsWith("tile-card-editor"))) throw new Error("the Card section shows the tile card's options");
       const cardAbove = section.querySelector("svs-subwoofer-card-editor");
       if (!cardAbove) throw new Error("the card's editor is not in the main subwoofer's section");
+      if (getComputedStyle(cardAbove.shadowRoot.querySelector("ha-expansion-panel")).display !== "none") throw new Error("the Main subwoofer section shows the style options");
       if (!(section.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING)) throw new Error("the main subwoofer's section is not before the heading");
 
       // State content and features stay as edited (the first tab is open)
@@ -281,11 +288,11 @@
       await until(() => !tooltip.classList.contains("visible"), "the callout to hide after the key", 3000);
     });
 
-    await test("volume editor: Copy from main on a panel row's volume only, never grayed out", async () => {
+    await test("volume editor: Copy from main on a row, Copy to members on the main, never grayed out", async () => {
       if (!second) throw new Error("two subwoofers are needed");
       const main = { type: "custom:svs-subwoofer-volume", min: -40, volume_thresholds: [{ below: -20, color: "green" }, { color: "red" }] };
       const rowVolume = { type: "custom:svs-subwoofer-volume", max: -5 };
-      const { el: panel } = hosted("svs-subwoofer-panel-card-editor");
+      const { el: panel, saved: savedPanel } = hosted("svs-subwoofer-panel-card-editor");
       panel.setConfig({
         type: "custom:svs-subwoofer-panel-card", entity: first, features: [main],
         members: [{ entity: second, features: [rowVolume] }],
@@ -320,12 +327,20 @@
       expectEqual(row.saved.at(-1), main, "the copied settings");
       await until(() => row.editor.querySelector("ha-form").data.min === -40, "the form to show the copied settings");
 
-      // The main subwoofer's own volume, even with the same settings: no button
-      const cardEditor = panel.shadowRoot.querySelector("ha-expansion-panel svs-subwoofer-card-editor");
+      // The main subwoofer's own volume, even with the same settings: Copy to
+      // members instead, which puts its settings on every row
+      const cardEditor = panel.shadowRoot.querySelector("#card svs-subwoofer-card-editor");
       const mainTile = await tileEditorIn(cardEditor);
       await until(() => featuresEditor(mainTile), "the main subwoofer's features list");
+      const changed = { ...main, min: -45 };
       const own = open(mainTile, 0, main);
-      if (shown(own.button)) throw new Error("Copy from main is shown on the main subwoofer");
+      expectEqual(own.button.textContent, "Copy to members", "the main subwoofer's button");
+      if (!shown(own.button) || own.button.disabled) throw new Error("Copy to members is not offered on the main subwoofer");
+      own.editor.setConfig(changed);
+      const before = savedPanel.length;
+      own.button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await until(() => savedPanel.length > before, "the panel to save");
+      expectEqual(savedPanel.at(-1).members[0].features, [changed], "the rows' volume after Copy to members");
 
       // A volume feature outside the panel: no button
       const alone = hosted("svs-subwoofer-volume-editor").el;
