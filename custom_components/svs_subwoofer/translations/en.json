@@ -60,7 +60,8 @@
     "error": {
       "invalid_mac": "Invalid MAC address format",
       "cannot_connect": "Failed to connect to device",
-      "too_few_members": "Choose at least two subwoofers."
+      "too_few_members": "Choose at least two subwoofers.",
+      "duplicate_group": "These subwoofers are already a group. Choose different subwoofers, or change the existing group."
     },
     "abort": {
       "already_configured": "Device is already configured",
@@ -101,7 +102,8 @@
       }
     },
     "error": {
-      "too_few_members": "Choose at least two subwoofers."
+      "too_few_members": "Choose at least two subwoofers.",
+      "duplicate_group": "These subwoofers are already a group. Choose different subwoofers, or change the existing group."
     }
   },
   "entity": {
