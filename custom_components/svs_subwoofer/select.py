@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from dataclasses import dataclass
 
@@ -284,15 +283,12 @@ class SVSGroupPresetSelect(SVSGroupEntity, SelectEntity):
         slots = self.svs_group.matched_presets().get(option)
         if slots is None:
             raise HomeAssistantError(f"Not every subwoofer has a preset named {option}")
-        results = await asyncio.gather(
-            *(
-                coordinators[address].async_load_preset(slot)
-                for address, slot in slots.items()
-                if address in coordinators
-            )
+        # A preset load already resends a load the subwoofer does not confirm
+        await self.svs_group.async_command_members(
+            lambda address, coordinator: coordinator.async_load_preset(slots[address]),
+            f"load {option} on",
+            retry=False,
         )
-        if not all(results):
-            raise HomeAssistantError(f"Could not load {option} on every subwoofer")
 
 
 class SVSGroupStandbySelect(SVSGroupEntity, SelectEntity):
@@ -325,11 +321,9 @@ class SVSGroupStandbySelect(SVSGroupEntity, SelectEntity):
         if option == GROUP_STATE_MIXED:
             return
         value = STANDBY_MODE_MAP[option]
-        results = await asyncio.gather(
-            *(
-                coordinator.async_send_command("STANDBY", value)
-                for coordinator in self.svs_group.coordinators().values()
-            )
+        await self.svs_group.async_command_members(
+            lambda address, coordinator: coordinator.async_send_command(
+                "STANDBY", value
+            ),
+            f"set {option} on",
         )
-        if not all(results):
-            raise HomeAssistantError(f"Could not set {option} on every subwoofer")
