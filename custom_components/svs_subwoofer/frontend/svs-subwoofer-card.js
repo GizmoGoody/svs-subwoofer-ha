@@ -235,6 +235,25 @@ class SvsPresetButtons extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <style>${FEATURE_CSS}${BUTTON_ROW_CSS}
         .cycle { gap: 6px; grid-auto-flow: column; justify-content: center; align-items: center; }
+        /* Console: each key in its color at full strength, as the volume
+           slider shows its colors, with text that reads on that color. The
+           key's shading lies over the color, so a key still looks raised,
+           and pressed in when selected. */
+        :host([svs-console]) button::before,
+        :host([svs-console]) button:hover::before,
+        :host([svs-console]) button[aria-pressed="true"]::before,
+        :host([svs-console]) button[aria-pressed="true"]:hover::before { opacity: 1; }
+        :host([svs-console]) button,
+        :host([svs-console]) button[aria-pressed="true"] { color: var(--svs-on-color, #fff); background-image: none; }
+        :host([svs-console]) button::after {
+          content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+          background: linear-gradient(180deg, rgba(255,255,255,.35), rgba(255,255,255,0) 45%, rgba(0,0,0,.18));
+        }
+        :host([svs-console]) button:active::after,
+        :host([svs-console]) button[aria-pressed="true"]::after {
+          background: linear-gradient(180deg, rgba(0,0,0,.22), rgba(0,0,0,0) 55%, rgba(255,255,255,.08));
+        }
+        :host([svs-console]) button > * { z-index: 1; }
       </style>
       <div class="row" role="group" aria-label="Preset"></div>`;
     this._row = this.shadowRoot.querySelector(".row");
