@@ -45,6 +45,18 @@ FEATURES: dict[str, Callable[[], bool]] = {
     "preset_detection": lambda: _has("const", "PRESET_MANUAL"),
     "quiet_preset_load": lambda: _has("coordinator", "PRESET_SETTLE_DELAY"),
     "preset_load_retry": lambda: _has("coordinator", "PRESET_LOAD_ATTEMPTS"),
+    # A preset load waits for an earlier reply to end
+    "preset_quiet": lambda: _has("coordinator", "PRESET_QUIET"),
+    # A failed preset load shows what was shown before
+    "preset_rollback": lambda: _source_contains("coordinator", "What was shown before"),
+    # Manual chosen before the settings are known stays
+    "manual_pending": lambda: _source_contains("coordinator", "_manual_pending"),
+    # A preset's name cannot collide with Default or Manual
+    "preset_name_collisions": lambda: _has("helpers", "preset_option_names"),
+    # A failed preset load is reported by the service and the device action
+    "load_failure_reported": lambda: _source_contains(
+        "services", "Could not load preset"
+    ),
     # Lost preset name replies are asked for again
     "preset_name_retry": lambda: _has("coordinator", "NAME_READ_ATTEMPTS"),
     # PR 11

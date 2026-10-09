@@ -138,6 +138,10 @@ class FakeSubwoofer:
     - ignore_loads=N ignores the next N preset loads, as if they were lost
     - lose_names={slot: N} loses the next N name replies for a preset slot
     - refuse_connects=N refuses the next N connections, as if out of range
+    - fail_loads=N fails the next N preset load writes, as a lost link would
+    - late_replies=S delivers a read's reply after its first fragment S seconds
+      late, as a slow link does (the probe before a command can then still be
+      answering when the command goes out)
     """
 
     def __init__(self) -> None:
@@ -158,6 +162,8 @@ class FakeSubwoofer:
         self.ignore_loads = 0
         self.lose_names: dict[int, int] = {}
         self.refuse_connects = 0
+        self.fail_loads = 0
+        self.late_replies = 0.0
         self.client: FakeBleakClient | None = None
         self.connects = 0
         self.received: list[bytes] = []
@@ -272,9 +278,22 @@ class FakeBleakClient:
     ) -> None:
         if not self.is_connected:
             raise BleakError("Not connected")
+        frame = bytes(data)
+        if (
+            self.sub.fail_loads
+            and frame[1:3] == b"\x07\x04"
+            and 0x18 <= int.from_bytes(frame[5:9], "little") <= 0x1B
+        ):
+            self.sub.fail_loads -= 1
+            raise BleakError("The fake subwoofer's link failed")
         loop = asyncio.get_running_loop()
-        for chunk in self.sub.notifications(self.sub.handle(bytes(data))):
-            loop.call_soon(self._notify, chunk)
+        chunks = self.sub.notifications(self.sub.handle(frame))
+        late = self.sub.late_replies and frame[1:3] == b"\xf1\x1f"
+        for number, chunk in enumerate(chunks):
+            if late and number:
+                loop.call_later(self.sub.late_replies, self._notify, chunk)
+            else:
+                loop.call_soon(self._notify, chunk)
 
     def _notify(self, chunk: bytes) -> None:
         if self.is_connected and self.callback:

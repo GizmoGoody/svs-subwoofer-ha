@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr
 
-from .conftest import FakeSubwoofer, SetupEntry, entity_id, settle
+from custom_components.svs_subwoofer import (
+    coordinator as coordinator_module,
+    device_action,
+)
+from custom_components.svs_subwoofer.const import DOMAIN
+
+from .conftest import ADDRESS, NAME, FakeSubwoofer, SetupEntry, entity_id, settle
 from .features import requires
 
 pytestmark = requires("preset_detection")
@@ -24,6 +33,10 @@ async def _select(hass: HomeAssistant, option: str) -> None:
 
 def _preset(hass: HomeAssistant) -> str:
     return hass.states.get(entity_id(hass, "select", "preset")).state
+
+
+def _options(hass: HomeAssistant) -> list[str]:
+    return hass.states.get(entity_id(hass, "select", "preset")).attributes["options"]
 
 
 async def test_loaded_preset_is_shown(
@@ -126,3 +139,186 @@ async def test_unconfirmed_preset_load_fails_and_records_nothing(
     assert sub.settings["VOLUME"] == -15
     # MEDIUM's settings were not recorded as HIGH's
     assert _preset(hass) == "MEDIUM"
+
+
+async def _select_failing(hass: HomeAssistant, option: str) -> None:
+    """Select an option that is expected to fail, and let things settle."""
+    with pytest.raises(HomeAssistantError):
+        await _select(hass, option)
+    await settle(1.0)
+
+
+@requires("preset_quiet")
+async def test_end_of_a_probe_reply_is_not_taken_for_a_load(
+    hass: HomeAssistant, sub: FakeSubwoofer, setup_entry: SetupEntry
+) -> None:
+    """The probe before a load can still be answering when the load goes out.
+
+    The sub loses the first load, and the rest of the probe's reply arrives
+    meanwhile. It must not count as the load's answer: the load is sent again,
+    and the preset that is recorded and shown is the one the sub has.
+    """
+    await setup_entry()
+    sub.ignore_loads = 1
+    sub.late_replies = 0.1
+    # Probe before every command, as after a long silence
+    with patch.object(coordinator_module, "LIVENESS_STALE_AFTER", 0.0):
+        frames_before = len(sub.received)
+        await _select(hass, "HIGH")
+    loads = [t for t in sub.frame_types()[frames_before:] if t == "0704"]
+    assert loads == ["0704", "0704"]
+    assert sub.settings["VOLUME"] == -10
+    assert _preset(hass) == "HIGH"
+
+
+@requires("preset_rollback")
+async def test_failed_write_shows_what_was_shown_before(
+    hass: HomeAssistant, sub: FakeSubwoofer, setup_entry: SetupEntry
+) -> None:
+    """A load whose write fails does not leave the new preset on show."""
+    await setup_entry()
+    await _select(hass, "MEDIUM")
+    sub.fail_loads = 1
+    await _select_failing(hass, "HIGH")
+    assert _preset(hass) == "MEDIUM"
+
+
+@requires("preset_rollback")
+async def test_failed_write_keeps_manual(
+    hass: HomeAssistant, sub: FakeSubwoofer, setup_entry: SetupEntry
+) -> None:
+    """Manual is not lost when the load that would end it fails."""
+    await setup_entry()
+    await _select(hass, "MEDIUM")
+    volume = entity_id(hass, "number", "volume")
+    await hass.services.async_call(
+        "number", "set_value", {"entity_id": volume, "value": -14}, blocking=True
+    )
+    await settle()
+    assert _preset(hass) == "Manual"
+    sub.fail_loads = 1
+    await _select_failing(hass, "HIGH")
+    assert _preset(hass) == "Manual"
+
+
+@requires("preset_rollback")
+async def test_unconfirmed_load_keeps_manual(
+    hass: HomeAssistant, sub: FakeSubwoofer, setup_entry: SetupEntry
+) -> None:
+    """A load the sub never confirms leaves Manual as it was."""
+    await setup_entry()
+    await _select(hass, "MEDIUM")
+    volume = entity_id(hass, "number", "volume")
+    await hass.services.async_call(
+        "number", "set_value", {"entity_id": volume, "value": -14}, blocking=True
+    )
+    await settle()
+    sub.ignore_loads = 2
+    await _select_failing(hass, "HIGH")
+    assert _preset(hass) == "Manual"
+
+
+@requires("preset_rollback")
+async def test_manual_ends_when_a_load_is_confirmed(
+    hass: HomeAssistant, sub: FakeSubwoofer, setup_entry: SetupEntry
+) -> None:
+    """The rollback does not keep Manual after a load that worked."""
+    await setup_entry()
+    await _select(hass, "MEDIUM")
+    await _select(hass, "Manual")
+    await _select(hass, "HIGH")
+    assert _preset(hass) == "HIGH"
+
+
+@requires("manual_pending")
+async def test_manual_chosen_before_settings_are_known_stays(
+    hass: HomeAssistant, sub: FakeSubwoofer, setup_entry: SetupEntry
+) -> None:
+    """Manual chosen while a setting is unknown holds once the settings arrive."""
+    entry = await setup_entry()
+    coordinator = entry.runtime_data
+    coordinator.data["VOLUME"] = None
+    await _select(hass, "Manual")
+    assert _preset(hass) == "Manual"
+    await coordinator.async_request_refresh_data()
+    await settle(1.0)
+    assert coordinator.data["VOLUME"] is not None
+    assert _preset(hass) == "Manual"
+
+
+@requires("preset_name_collisions")
+async def test_preset_named_manual_is_told_apart_from_manual(
+    hass: HomeAssistant, sub: FakeSubwoofer, setup_entry: SetupEntry
+) -> None:
+    """A preset named Manual gets its own option, which loads it."""
+    sub.preset_names = ["HIGH", "Manual", "LOW"]
+    await setup_entry()
+    assert _options(hass) == ["HIGH", "Manual (Preset 2)", "LOW", "Default", "Manual"]
+    await _select(hass, "Manual (Preset 2)")
+    assert sub.settings["VOLUME"] == -15
+    assert _preset(hass) == "Manual (Preset 2)"
+    # The Manual option is still Manual
+    await _select(hass, "Manual")
+    assert _preset(hass) == "Manual"
+
+
+@requires("preset_name_collisions")
+async def test_duplicate_and_reserved_preset_names_get_their_slot(
+    hass: HomeAssistant, sub: FakeSubwoofer, setup_entry: SetupEntry
+) -> None:
+    """Two options are never the same, ignoring case."""
+    sub.preset_names = ["HIGH", "high", "Default"]
+    await setup_entry()
+    assert _options(hass) == [
+        "HIGH",
+        "high (Preset 2)",
+        "Default (Preset 3)",
+        "Default",
+        "Manual",
+    ]
+
+
+def _device_id(hass: HomeAssistant) -> str:
+    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, ADDRESS)})
+    assert device
+    return device.id
+
+
+@requires("load_failure_reported")
+async def test_load_preset_service_loads_and_reports_a_failed_load(
+    hass: HomeAssistant, sub: FakeSubwoofer, setup_entry: SetupEntry
+) -> None:
+    """The service loads the preset, and fails naming a device that did not."""
+    await setup_entry()
+    data = {"device_ids": [_device_id(hass)], "preset": 1}
+    await hass.services.async_call(DOMAIN, "load_preset", data, blocking=True)
+    assert sub.settings["VOLUME"] == -10
+
+    sub.ignore_loads = 2
+    with pytest.raises(HomeAssistantError) as raised:
+        await hass.services.async_call(
+            DOMAIN, "load_preset", {**data, "preset": 2}, blocking=True
+        )
+    assert NAME in str(raised.value)
+
+
+@requires("load_failure_reported")
+async def test_load_preset_device_action_reports_a_failed_load(
+    hass: HomeAssistant, sub: FakeSubwoofer, setup_entry: SetupEntry
+) -> None:
+    """The device action fails when the preset did not load."""
+    await setup_entry()
+    config = {
+        "device_id": _device_id(hass),
+        "domain": DOMAIN,
+        "type": "load_preset",
+        "preset": 2,
+    }
+    await device_action.async_call_action_from_config(hass, config, {}, None)
+    assert sub.settings["VOLUME"] == -15
+
+    sub.ignore_loads = 2
+    with pytest.raises(HomeAssistantError):
+        await device_action.async_call_action_from_config(
+            hass, {**config, "preset": 1}, {}, None
+        )
