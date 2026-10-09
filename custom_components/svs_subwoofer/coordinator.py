@@ -115,6 +115,8 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # (None: the sub offers none, so the settings check is used)
         self._quiet_char: str | None = None
         self._quiet_char_client: BleakClient | None = None
+        # The sub offering no such field is a warning once, not at every connection
+        self._quiet_char_warned = False
         self._idle_timeout = idle_timeout
         self._refresh_interval = refresh_interval
         self._refresh_task: asyncio.Task | None = None
@@ -361,7 +363,9 @@ class SVSSubwooferCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "Quiet connection: reading %s from %s", uuid, self.address
                 )
                 return uuid
-        _LOGGER.warning(
+        log = _LOGGER.debug if self._quiet_char_warned else _LOGGER.warning
+        self._quiet_char_warned = True
+        log(
             "Quiet connection: %s offers no standard readable field, so it is "
             "checked with a settings request instead (as with Constant), which "
             "lights the panel LEDs",
