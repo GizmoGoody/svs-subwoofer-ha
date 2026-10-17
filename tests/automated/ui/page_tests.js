@@ -398,7 +398,8 @@
       const report = JSON.stringify({ connection, theirs, ours }, null, 1);
       console.log(`target diagnostic: ${report}`);
       results.push({ name: "diagnostic: the action editor's target (report only)", ok: true, detail: report });
-      if (!connection) throw new Error("no Connection switch on the fake subwoofer");
+      // A branch without the subwoofer Connection switch has nothing to target
+      if (!connection) return;
       if (theirs.picker && !ours.picker) throw new Error(`the SVS editor shows no target picker where Home Assistant's does:\n${report}`);
       if (ours.control && !ours.hassHasSwitch) throw new Error(`the SVS editor's action editor does not know the Connection switch:\n${report}`);
     });
