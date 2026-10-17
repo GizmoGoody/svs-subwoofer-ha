@@ -20,6 +20,7 @@ Control your SVS subwoofer directly from Home Assistant via Bluetooth. Full para
   - Presets (1-4)
   - Standby Mode
 - Device triggers and actions for automations
+- Dashboard card and tile features (preset buttons, volume slider, standby), with optional SVS cabinet finishes; included, with nothing else to install
 
 ## Prerequisites
 
@@ -155,6 +156,65 @@ To get the most from this, load each preset from Home Assistant once. Standby mo
 | Entity | Description |
 |--------|-------------|
 | Connected | On only while the subwoofer is connected and answering; a connection the subwoofer does not answer shows as off |
+
+## Dashboard Card
+
+The integration includes a dashboard card and three tile features, so there is nothing else to install.
+
+### Tile features
+
+These add controls to any tile card whose entity belongs to an SVS subwoofer or subwoofer group. Edit a tile card, open **Features**, and add them. Each one finds its entity on the same device, so on a subwoofer group it controls the group.
+
+| Feature | What it does |
+|---------|--------------|
+| **SVS Subwoofer presets** | One button per preset, lit in that preset's color while it is active. Selecting a button always loads that preset, even the one that is already shown. **Style**: **Buttons** (`presets_buttons`, one per preset) or **Cycle button** (`presets_cycle`, one button showing the active preset; each tap loads the next). Presets appear in the subwoofer's slot order until you reorder them; you can also choose which appear, and each preset's color and icon. Presets named LOW, MEDIUM, and HIGH start as green, yellow, and red, with volume icons. |
+| **SVS Subwoofer volume** | A volume slider. **Slider from** and **Slider to** set its range (the full −60 to 0 dB by default), so the volumes you actually use get the whole width of the slider; the driver's size follows the same range. Turn on **Volume thresholds** to split it into three ranges, each with its own color: the track shows the ranges faintly, and the filled part takes the color of the range it ends in. If the two volumes are entered the other way round, the editor swaps them back into order and moves the quietest and loudest colors with them. |
+| **SVS Subwoofer standby mode** | The standby mode as a row of buttons, styled like the preset buttons. |
+
+All three take their height, corners, and colors from your theme.
+
+### SVS Subwoofer card
+
+Edit a dashboard, select **Add card**, and search for **SVS Subwoofer**. The card is Home Assistant's tile card: every tile card option works the same way and appears in the same editor. The tile card needs one entity: choose the subwoofer's or group's **Volume** entity, so the driver's size follows it. **State content** can also show the subwoofer's **Preset** and **Standby mode** next to the volume. Below the tile card's options, the **SVS style** panel adds:
+
+- **Finish**: None (your theme's own card), Premium Black Ash, Black Oak Real Wood Veneer, Piano Gloss Black, Piano Gloss White, Fabric (a dark speaker cloth), or Grille (a perforated metal speaker grille). How the controls sit on the finish is set by **Features style**.
+- **Randomize grain** (the wood finishes) draws a new board, running vertically or horizontally at a new grain size. **Randomize reflections** (the gloss finishes, Fabric, and Grille) moves the reflections: very subdued on the fabric, a little stronger on the grille.
+- **Finish extent**: **Card**, or **Container**. In a `custom:expander-card`, choose **Container** on the header card and on each card inside: the header draws the finish across the whole expander card, and the cards inside let it show through, so they read as one card.
+- **Features style** (with a finish), the same option with the same values as on The Lampster card:
+  - **Match style**: the controls sit on the finish, and it shows through them.
+  - **Flat**: each control sits on a patch of the finish's base color, without grain or reflections, and has a solid backing.
+  - **Inset**: each control sits in a channel pressed into the panel, with a solid backing. The preset and standby buttons are keys that press in (the active one stays pressed), and Home Assistant's own toggles become a slide.
+  - With Flat and Inset, the finish still shows between the preset buttons.
+- **Standby mode badge**: a letter on the driver, down and to the right, for the standby mode: A (Auto On), O (On), or T (Trigger).
+- **Bluetooth badge**: the connection, shown on the driver (the default), only when the subwoofer is not connected, or hidden. On a group in the panel card, it shows the group's subwoofers together: all, some, or none connected. To connect and disconnect with a tap, set **Icon tap behavior** (under Interactions) to toggle the subwoofer's **Connection** switch.
+- **Shake when the volume or preset changes**: the driver shakes while the volume slider moves and briefly when a preset loads, harder at a higher volume. It stays still for anyone who has reduced motion turned on.
+
+In place of the tile card's icon, the card shows a subwoofer driver. Its size follows the volume. Its ring takes the active preset's color; while the volume slider moves, and when no preset is active, it takes the color of the volume threshold instead.
+
+```yaml
+type: custom:svs-subwoofer-card
+entity: number.subwoofer_both_volume
+finish: black_ash        # none, black_ash, black_oak, gloss_black, gloss_white, fabric, grille
+features_style: inset     # match, flat or inset
+pattern: 4242            # the grain or reflection pattern (Randomize sets it)
+vibration: true
+state_content:
+  - state
+  - preset
+features:
+  - type: custom:svs-subwoofer-presets
+  - type: custom:svs-subwoofer-volume
+    volume_thresholds:
+      - below: -30
+        color: green
+      - below: -15
+        color: yellow
+      - color: red
+  - type: custom:svs-subwoofer-standby
+features_position: inline   # presets beside the name; the other features below, two side by side
+```
+
+If a dashboard was already open when Home Assistant started or the integration was updated, reload the page if it shows "Custom element does not exist".
 
 ## Dashboard Examples
 

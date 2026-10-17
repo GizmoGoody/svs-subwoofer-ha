@@ -17,9 +17,15 @@ from homeassistant.const import (
 )
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers import device_registry as dr, issue_registry as ir
+from homeassistant.helpers import (
+    config_validation as cv,
+    device_registry as dr,
+    issue_registry as ir,
+)
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.typing import ConfigType
 
+from .card import async_register_card, async_remove_card_resource
 from .const import (
     CONF_DISCONNECT_AFTER,
     CONF_ENTRY_TYPE,
@@ -63,6 +69,15 @@ type SVSConfigEntry = ConfigEntry[SVSSubwooferCoordinator | SVSGroup]
 
 def _is_group(entry: ConfigEntry) -> bool:
     return entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_GROUP
+
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Set up SVS Subwoofer: serve its dashboard card and tile features."""
+    await async_register_card(hass)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: SVSConfigEntry) -> bool:
@@ -169,11 +184,19 @@ async def async_unload_entry(hass: HomeAssistant, entry: SVSConfigEntry) -> bool
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Clean up after a removed subwoofer or group.
+    """Clean up after a subwoofer or group is removed.
 
-    A removed subwoofer's recorded preset settings are deleted, and it leaves
-    every group it was in, offset included.
+    The card leaves the dashboard resources with the last entry. A removed
+    subwoofer's recorded preset settings are deleted, and it leaves every
+    group it was in, offset included.
     """
+    others = [
+        other
+        for other in hass.config_entries.async_entries(DOMAIN)
+        if other.entry_id != entry.entry_id
+    ]
+    if not others:
+        await async_remove_card_resource(hass)
     if _is_group(entry):
         ir.async_delete_issue(hass, DOMAIN, _group_size_issue(entry))
         return
