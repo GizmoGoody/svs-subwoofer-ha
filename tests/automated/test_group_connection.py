@@ -137,3 +137,39 @@ async def test_member_that_never_connects_fails_by_name(
     # The other member connected anyway
     assert sub.client.is_connected
     assert hass.states.get(switch).state == "off"
+
+
+@requires("group_connection_one_at_a_time")
+async def test_members_are_connected_one_at_a_time(
+    hass: HomeAssistant,
+    sub: FakeSubwoofer,
+    second_sub: FakeSubwoofer,
+    setup_entry: SetupEntry,
+) -> None:
+    """Connect waits for one member before connecting the next."""
+    from custom_components.svs_subwoofer.coordinator import (
+        SVSSubwooferCoordinator,
+    )
+
+    entry = await _setup(hass, setup_entry)
+    switch = _entity(hass, entry, "switch", "connection")
+    await _call(hass, "switch", "turn_off", switch)
+    sub.connect_delay = second_sub.connect_delay = 0.05
+    reconnect = SVSSubwooferCoordinator.async_reconnect
+    active = 0
+    most = 0
+
+    async def counted(self: SVSSubwooferCoordinator) -> None:
+        nonlocal active, most
+        active += 1
+        most = max(most, active)
+        try:
+            await reconnect(self)
+        finally:
+            active -= 1
+
+    with patch.object(SVSSubwooferCoordinator, "async_reconnect", counted):
+        await _call(hass, "switch", "turn_on", switch)
+    assert most == 1
+    assert sub.client.is_connected
+    assert second_sub.client.is_connected

@@ -86,6 +86,9 @@ FEATURES: dict[str, Callable[[], bool]] = {
     # Subwoofer groups
     "groups": lambda: _has("const", "ENTRY_TYPE_GROUP"),
     # A group's Connect and Disconnect buttons and Connection switch
+    "group_connection_one_at_a_time": lambda: _in_groups(
+        "subwoofer_group", "Unlike async_command_members"
+    ),
     "group_connection": lambda: (
         _has("const", "ENTRY_TYPE_GROUP")
         and _has("subwoofer_group", "GROUP_CONNECTION_ATTEMPTS")
