@@ -17,6 +17,7 @@ from homeassistant.helpers import (
     entity_registry as er,
     issue_registry as ir,
 )
+from homeassistant.helpers.update_coordinator import UpdateFailed
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.svs_subwoofer import device_trigger
@@ -669,7 +670,11 @@ async def test_sync_from_copies_to_a_group_but_not_from_one(
         )
     actions = yaml.safe_load((STRINGS / "services.yaml").read_text(encoding="utf-8"))
     source = actions["sync_from"]["fields"]["source_device_id"]["selector"]["device"]
-    assert source["entity"] == [{"domain": "binary_sensor"}]
+    if has("source_picker_unfiltered"):
+        # The action refuses a group itself, so the picker needs no filter
+        assert "entity" not in source
+    else:
+        assert source["entity"] == [{"domain": "binary_sensor"}]
 
 
 @requires("group_duplicates")
@@ -690,3 +695,63 @@ async def test_group_with_the_same_subwoofers_is_refused(
         {"name": "Again", "members": [ADDRESS2, ADDRESS], "features": ["preset"]},
     )
     assert result["errors"] == {"members": "duplicate_group"}
+
+
+# Second review of the subwoofer groups (PR 16)
+
+
+@requires("mixed_refused")
+async def test_choosing_mixed_is_refused(
+    hass: HomeAssistant, second_sub: FakeSubwoofer, setup_entry: SetupEntry
+) -> None:
+    """Mixed only shows that the subs differ; choosing it raises an error."""
+    await _setup_subs(setup_entry)
+    entry = await _setup_group(hass)
+    for key in ("preset", "standby_mode"):
+        with pytest.raises(ServiceValidationError):
+            await _call(
+                hass,
+                "select",
+                _group_entity(hass, entry, "select", key),
+                option="Mixed",
+            )
+
+
+@requires("slots_flag_reset")
+async def test_out_of_slots_is_forgotten_after_a_connection(
+    hass: HomeAssistant,
+    second_sub: FakeSubwoofer,
+    setup_entry: SetupEntry,
+    bluetooth: FakeBluetooth,
+) -> None:
+    """A lack of slots counts only for the connection attempt that met it."""
+    first, _ = await _setup_entries(setup_entry)
+    coordinator = first.runtime_data
+    bluetooth.slots = 0
+    with pytest.raises(UpdateFailed):
+        await coordinator.async_reconnect()
+    assert coordinator.out_of_slots
+    bluetooth.slots = None
+    await coordinator.async_reconnect()
+    assert not coordinator.out_of_slots
+
+
+@requires("slot_release_manual")
+async def test_a_released_slot_is_not_taken_back(
+    hass: HomeAssistant,
+    sub: FakeSubwoofer,
+    second_sub: FakeSubwoofer,
+    setup_entry: SetupEntry,
+    bluetooth: FakeBluetooth,
+) -> None:
+    """A member released to free a slot stays off until its next command."""
+    first, second = await _setup_entries(setup_entry)
+    entry = await _setup_group(hass)
+    volume = _group_entity(hass, entry, "number", "volume")
+    for member in (first, second):
+        await member.runtime_data.async_disconnect()
+    bluetooth.slots = 1
+    await _call(hass, "number", volume, value=-25)
+    assert second_sub.settings["VOLUME"] == -25
+    # Keep-alive must not reconnect it and take the slot back
+    assert first.runtime_data._manual_disconnect

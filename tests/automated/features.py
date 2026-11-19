@@ -100,6 +100,21 @@ FEATURES: dict[str, Callable[[], bool]] = {
     "group_preset_names": lambda: _in_groups("subwoofer_group", "unnamed_slots"),
     "group_actions": lambda: _in_groups("helpers", "get_group_for_device"),
     "group_duplicates": lambda: _in_groups("config_flow", "duplicate_group"),
+    # Second review of the subwoofer groups (PR 16)
+    "slots_flag_reset": lambda: _in_groups(
+        "coordinator", "Only the failure of this attempt"
+    ),
+    "slot_release_manual": lambda: _in_groups(
+        "subwoofer_group", "keep-alive does not take the slot"
+    ),
+    "mixed_refused": lambda: _in_groups("select", "MIXED_NOT_SELECTABLE"),
+    "source_picker_unfiltered": lambda: (
+        _has("const", "ENTRY_TYPE_GROUP")
+        and "a group has no Connected sensor"
+        not in Path("custom_components/svs_subwoofer/services.yaml").read_text(
+            encoding="utf-8"
+        )
+    ),
     # dev only (connection options)
     "connection_modes": lambda: _has("const", "CONF_CONNECTION_MODE"),
     # Review fixes to the connection modes (PR 14)
